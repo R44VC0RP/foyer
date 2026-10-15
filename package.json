@@ -15,5 +15,8 @@
     "@types/bun": "^1.4.3",
     "@types/chrome": "^0.3.5",
     "typescript": "^7.0.2"
+  },
+  "dependencies": {
+    "tldts": "^7.4.18"
   }
 }

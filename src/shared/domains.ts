@@ -1,29 +1,15 @@
+import { getDomain } from "tldts"
 import type { Provider } from "./types"
 
-// Small public-suffix subset. Good enough to group login.example.co.uk with
-// example.co.uk without shipping the whole PSL.
-const MULTI_PART_SUFFIXES = new Set([
-  "co.uk", "org.uk", "ac.uk", "gov.uk", "me.uk",
-  "com.au", "net.au", "org.au", "edu.au",
-  "co.nz", "org.nz",
-  "co.jp", "ne.jp", "or.jp",
-  "co.kr", "or.kr",
-  "com.br", "com.mx", "com.ar", "com.co",
-  "co.in", "net.in", "org.in",
-  "com.cn", "com.hk", "com.tw", "com.sg", "com.my",
-  "co.za", "co.il", "com.tr",
-  "github.io", "vercel.app", "netlify.app", "pages.dev", "workers.dev",
-  "herokuapp.com", "firebaseapp.com", "web.app", "azurewebsites.net",
-  "cloudfront.net", "appspot.com",
-])
-
+/**
+ * Registrable domain from the full Public Suffix List, private section included,
+ * so alice.github.io and bob.github.io (or two blogspot blogs) are different
+ * sites. That matters for autofill: credentials are offered per registrable domain.
+ */
 export function registrableDomain(hostname: string): string {
   const host = hostname.toLowerCase().replace(/^\*\./, "").replace(/\.$/, "")
   if (/^\d+\.\d+\.\d+\.\d+$/.test(host) || host === "localhost" || !host.includes(".")) return host
-  const labels = host.split(".")
-  const lastTwo = labels.slice(-2).join(".")
-  if (MULTI_PART_SUFFIXES.has(lastTwo) && labels.length >= 3) return labels.slice(-3).join(".")
-  return lastTwo
+  return getDomain(host, { allowPrivateDomains: true }) ?? host
 }
 
 // Hosts that act as identity providers. A login flow that hops onto one of
