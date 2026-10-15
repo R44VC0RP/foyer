@@ -8,6 +8,7 @@ import { initPasskeyChannel } from "./autofill/channel"
 import { initDialogs } from "./autofill/dialog-host"
 import { initAutofill, refreshAutofill } from "./autofill/inline"
 import { classifyInput, fieldSpec, LOGIN_URL, scanPage, type ControlRole } from "./detect"
+import { deepActiveElement, deepQueryAll, openRoots } from "./shadow"
 import { MEDIATIONS, USER_VERIFICATIONS } from "./shared/dataset"
 import { idpForHost, isDedicatedIdpHost } from "./shared/domains"
 import { isHostname, safeHost, templatePath } from "./shared/privacy"
@@ -103,6 +104,7 @@ function scan() {
     lastSignature = ""
     filled = new WeakSet()
   }
+  watchShadowRoots()
   const surface = buildSurface()
   currentSurface = surface
   const sig = signatureOf(surface)
@@ -113,7 +115,7 @@ function scan() {
   }
   if (!surface) lastSignature = ""
   // Autofocused login fields get the menu once the form is recognised.
-  const active = document.activeElement
+  const active = deepActiveElement()
   if (active instanceof HTMLInputElement && fillTargets.some((t) => t.el === active)) refreshAutofill(active)
 
   if (!isTop) return
@@ -144,14 +146,18 @@ function scheduleScan() {
   }, wait)
 }
 
+const OBSERVE: MutationObserverInit = {
+  childList: true,
+  subtree: true,
+  attributes: true,
+  attributeFilter: ["type", "class", "hidden", "autocomplete", "aria-hidden"],
+}
+let observer: MutationObserver | null = null
+
 function start() {
   scheduleScan()
-  new MutationObserver(scheduleScan).observe(document.documentElement, {
-    childList: true,
-    subtree: true,
-    attributes: true,
-    attributeFilter: ["type", "class", "hidden", "autocomplete", "aria-hidden"],
-  })
+  observer = new MutationObserver(scheduleScan)
+  observer.observe(document.documentElement, OBSERVE)
   // SPA navigations that don't touch the DOM much.
   window.setInterval(() => {
     if (location.href !== lastUrl) scheduleScan()
@@ -161,8 +167,11 @@ function start() {
 
 // ---- Interaction tracking ---------------------------------------------------
 
+/** The real target, even inside a shadow root (events retarget to the host). */
+const realTarget = (event: Event) => event.composedPath()[0] ?? event.target
+
 function onInput(event: Event) {
-  const el = event.target
+  const el = realTarget(event)
   if (!(el instanceof HTMLInputElement) || filled.has(el)) return
   let spec = fields.get(el)
   if (!spec) {
@@ -177,7 +186,7 @@ function onInput(event: Event) {
 }
 
 function filledGroup(spec: FieldSpec) {
-  for (const input of Array.from(document.querySelectorAll("input"))) {
+  for (const input of deepQueryAll<HTMLInputElement>("input")) {
     if (fields.get(input)?.selector === spec.selector) filled.add(input)
   }
 }
@@ -194,7 +203,8 @@ function submitted(via: "form" | "button" | "enter", selector?: string) {
 // ones, which would pollute the dataset and could trigger a save capture.
 function onClick(event: MouseEvent) {
   if (!event.isTrusted || !currentSurface) return
-  let node = event.target instanceof Element ? event.target : null
+  const target = realTarget(event)
+  let node = target instanceof Element ? target : null
   for (let depth = 0; node && depth < 6; depth++, node = node.parentElement) {
     const role = controls.get(node)
     if (!role) continue
@@ -217,14 +227,27 @@ function onSubmit(event: Event) {
 
 function onKeydown(event: KeyboardEvent) {
   if (!event.isTrusted || event.key !== "Enter" || !currentSurface) return
-  if (event.target instanceof Element && fields.has(event.target)) submitted("enter")
+  const target = realTarget(event)
+  if (target instanceof Element && fields.has(target)) submitted("enter")
+}
+
+// Shadow roots need their own observer, and their own submit listener:
+// "submit" doesn't cross shadow boundaries the way input and click do.
+const watchedRoots = new WeakSet<ShadowRoot>()
+function watchShadowRoots() {
+  for (const root of openRoots()) {
+    if (!(root instanceof ShadowRoot) || watchedRoots.has(root)) continue
+    watchedRoots.add(root)
+    observer?.observe(root, OBSERVE)
+    root.addEventListener("submit", onSubmit, true)
+  }
 }
 
 // Clicks inside cross-origin widgets (Google's GSI button iframe) are invisible
 // to the page, but focus moving into the iframe is not.
 function onBlur() {
   window.setTimeout(() => {
-    const active = document.activeElement
+    const active = deepActiveElement()
     if (!(active instanceof HTMLIFrameElement) || !currentSurface) return
     let node: Element | null = active
     for (let depth = 0; node && depth < 6; depth++, node = node.parentElement) {

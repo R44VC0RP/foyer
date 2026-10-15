@@ -6,6 +6,7 @@
 // the user (synthetic events don't cross into the frame). All it ever sees is
 // the values written into its own fields after the user picks an account.
 
+import { deepActiveElement } from "../shadow"
 import type { FieldRole } from "../shared/types"
 import { fillFields, type FillTarget } from "./fill"
 import type { AutofillMessage, QueryReply, ToContent } from "./messages"
@@ -102,7 +103,7 @@ async function maybeOpen(el: HTMLInputElement, explicit = false) {
     const roles = [...new Set(state.targets().map((x) => x.role))]
     const reply = await ask<QueryReply>({ type: "af:query", presence: { roles, focused: t.role } })
     if (reply?.token && reply.count > 0) {
-      if (document.activeElement === el) openMenu(el, reply.token, reply.count)
+      if (deepActiveElement() === el) openMenu(el, reply.token, reply.count)
     } else emptyUntil.set(el, Date.now() + 15_000)
   })().finally(() => (querying = null))
 }
@@ -117,7 +118,7 @@ function onPointerDown(event: PointerEvent) {
   lastGestureAt = Date.now()
   const target = event.composedPath()[0]
   // Clicking a field that already has focus (e.g. autofocus) opens the menu too.
-  if (target instanceof HTMLInputElement && target === document.activeElement && !host) void maybeOpen(target)
+  if (target instanceof HTMLInputElement && target === deepActiveElement() && !host) void maybeOpen(target)
   if (!host) return
   const path = event.composedPath()
   if (path.includes(host) || path.includes(anchor as EventTarget)) return

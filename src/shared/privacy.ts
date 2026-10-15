@@ -52,7 +52,10 @@ const SELECTOR_PART = /^(?:#((?:[A-Za-z0-9_-]|\\.)+)|([a-z][a-z0-9-]*)(?:\[([a-z
  */
 export function isSafeSelector(selector: string): boolean {
   if (selector.length > 300) return false
-  return selector.split(" > ").every((part) => {
+  // "host >>> inner" steps into a shadow root; at most a few levels deep.
+  const scopes = selector.split(" >>> ")
+  if (scopes.length > 4) return false
+  return scopes.flatMap((scope) => scope.split(" > ")).every((part) => {
     const m = SELECTOR_PART.exec(part)
     if (!m) return false
     const [, id, , attr, value] = m

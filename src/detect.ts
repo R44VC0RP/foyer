@@ -18,6 +18,7 @@ import {
   type FieldFacts,
   type FormKind,
 } from "./clues"
+import { deepQueryAll, openRoots } from "./shadow"
 import { safeToken } from "./shared/privacy"
 import type { ControlSpec, FieldRole, FieldSpec, Provider, ProviderSpec, SurfaceKind } from "./shared/types"
 
@@ -126,25 +127,35 @@ const plainId = (v: string | null | undefined) => {
   return id && PLAIN_ID.test(id) ? id : undefined
 }
 
-function unique(selector: string, el: Element): boolean {
+function unique(selector: string, el: Element, root: Document | ShadowRoot): boolean {
   try {
-    const found = document.querySelectorAll(selector)
+    const found = root.querySelectorAll(selector)
     return found.length === 1 && found[0] === el
   } catch {
     return false
   }
 }
 
-/** Selector from stable, non-personal attributes; falls back to a short tag path. */
+/**
+ * Selector from stable, non-personal attributes; falls back to a short tag
+ * path. Inside a shadow root it is "<host selector> >>> <inner selector>",
+ * read as: find the host, then look inside its shadow root.
+ */
 export function selectorFor(el: Element): string {
+  const root = el.getRootNode()
+  if (root instanceof ShadowRoot) return `${selectorFor(root.host)} >>> ${selectorIn(el, root)}`
+  return selectorIn(el, document)
+}
+
+function selectorIn(el: Element, root: Document | ShadowRoot): string {
   const tag = el.tagName.toLowerCase()
   const id = plainId(el.id)
-  if (id && unique(`#${id}`, el)) return `#${id}`
+  if (id && unique(`#${id}`, el, root)) return `#${id}`
   for (const attr of ["data-testid", "data-test", "data-qa", "name", "autocomplete", "aria-label", "type"]) {
     const value = safeToken(el.getAttribute(attr), 48)
     if (!value || /["\\]/.test(value)) continue
     const sel = `${tag}[${attr}="${value}"]`
-    if (unique(sel, el)) return sel
+    if (unique(sel, el, root)) return sel
   }
   const parts: string[] = []
   let node: Element | null = el
@@ -214,10 +225,10 @@ export interface ScanResult {
   magicLink?: { el: Element; spec: ControlSpec }
 }
 
-function collectFields(): { fields: ScannedField[]; otpBoxes: HTMLInputElement[] } {
+function collectFields(roots: Array<Document | ShadowRoot>): { fields: ScannedField[]; otpBoxes: HTMLInputElement[] } {
   const fields: ScannedField[] = []
   const otpBoxes: HTMLInputElement[] = []
-  for (const el of Array.from(document.querySelectorAll("input")).slice(0, 200)) {
+  for (const el of deepQueryAll<HTMLInputElement>("input", roots).slice(0, 200)) {
     if (!eligible(el) || !isVisible(el)) continue
     // One-character boxes for codes are grouped into a single split OTP field.
     if (el.maxLength === 1) {
@@ -263,7 +274,7 @@ function contextText(form: HTMLFormElement | null): string {
   return words(parts.join(" \n "))
 }
 
-function collectControls(form: HTMLFormElement | null) {
+function collectControls(form: HTMLFormElement | null, roots: Array<Document | ShadowRoot>) {
   const providers: ScanResult["providers"] = []
   let passkey: ScanResult["passkey"]
   let magicLink: ScanResult["magicLink"]
@@ -273,7 +284,7 @@ function collectControls(form: HTMLFormElement | null) {
 
   // The login form's own buttons first, so a huge nav can't push them past the cap.
   const candidates = new Set<Element>(form ? Array.from(form.querySelectorAll(CLICKABLE)) : [])
-  for (const el of Array.from(document.querySelectorAll(CLICKABLE))) {
+  for (const el of deepQueryAll(CLICKABLE, roots)) {
     if (candidates.size >= 500) break
     candidates.add(el)
   }
@@ -416,13 +427,14 @@ const SURFACE_KIND: Record<FormKind, SurfaceKind | null> = {
 }
 
 export function scanPage(): ScanResult {
-  const { fields: all, otpBoxes } = collectFields()
+  const roots = openRoots()
+  const { fields: all, otpBoxes } = collectFields(roots)
   const form = primaryForm(all)
   // Judge and report the primary form only, so a sign-up form or newsletter
   // box elsewhere on the page doesn't change what the login form is.
   const inScope = (el: Element) => !form || form.contains(el)
   const scanned = all.filter((f) => inScope(f.el))
-  const controls = collectControls(form)
+  const controls = collectControls(form, roots)
   const formKind = decideKind(scanned, otpBoxes.length, contextText(form), controls)
   if (formKind) adjustRoles(scanned, formKind)
 
