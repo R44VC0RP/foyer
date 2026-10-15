@@ -328,7 +328,10 @@ interface Capture {
   domain: string
   origin: string
   username?: string
+  /** The current password (login forms, or the "current" box when changing it). */
   password?: string
+  /** Sign-up and change-password forms. */
+  newPassword?: string
   at: number
 }
 
@@ -352,7 +355,7 @@ async function savingEnabled(domain?: string): Promise<boolean> {
   return (await providers("save")).length > 0
 }
 
-async function capture(sender: chrome.runtime.MessageSender, username?: string, password?: string) {
+async function capture(sender: chrome.runtime.MessageSender, username?: string, password?: string, newPassword?: string) {
   const tabId = sender.tab?.id
   if (tabId === undefined || sender.tab?.incognito) return
   const url = senderOrigin(sender)
@@ -362,8 +365,8 @@ async function capture(sender: chrome.runtime.MessageSender, username?: string, 
   const prev = captures.get(tabId)
   const merged: Capture =
     prev && prev.domain === domain && Date.now() - prev.at < CAPTURE_TTL_MS
-      ? { ...prev, username: username || prev.username, password: password || prev.password, at: Date.now() }
-      : { domain, origin: url.origin, username, password, at: Date.now() }
+      ? { ...prev, username: username || prev.username, password: password || prev.password, newPassword: newPassword || prev.newPassword, at: Date.now() }
+      : { domain, origin: url.origin, username, password, newPassword, at: Date.now() }
   captures.set(tabId, merged)
 }
 
@@ -423,6 +426,62 @@ async function offerSaveSso(tabId: number, domain: string, origin: string, sso: 
   ).catch(() => {})
 }
 
+/** Changing a password: update the saved item that still has the old one. */
+async function offerPasswordChange(tabId: number, c: Capture) {
+  const newPassword = c.newPassword!
+  let target: { provider: string; ref: string; username: string } | undefined
+  if (c.username && c.password) {
+    const check = await request<CheckResponse>(
+      { type: "check", domain: c.domain, origin: c.origin, username: c.username, password: c.password },
+      60_000,
+    ).catch(() => null)
+    if (check?.status === "same" && check.matches[0]) target = { ...check.matches[0], username: c.username }
+  } else {
+    // No username on the form: only act when there's exactly one saved login here.
+    const saved = (await listAccounts(c.domain, c.origin).catch(() => [] as AccountV2[])).filter((a) => (a.kind ?? "password") === "password")
+    if (saved.length === 1) target = { provider: saved[0].provider, ref: saved[0].ref, username: saved[0].username ?? "" }
+  }
+  if (!target) {
+    if (c.username) await offerSaveLogin(tabId, { ...c, password: newPassword })
+    return
+  }
+  const writable = (await providers("save")).filter((p) => p.id === target!.provider)
+  if (!writable.length) return
+  const choice = await openDialog(
+    tabId,
+    "save-login",
+    { domain: c.domain, username: target.username || c.domain, update: true, providers: writable.map((p) => ({ id: p.id, name: p.name })) },
+    "corner",
+  )
+  if (choice.action === "never") return addNeverSave(c.domain)
+  if (choice.action !== "save") return
+  await request<SaveResponse>(
+    {
+      type: "save",
+      provider: target.provider,
+      domain: c.domain,
+      origin: c.origin,
+      entry: { kind: "password", title: c.domain, url: c.origin, username: target.username, password: newPassword },
+      ref: target.ref,
+    },
+    90_000,
+  ).catch(() => {})
+}
+
+/**
+ * The recorder calls this when the top page shows no login form any more.
+ * Sign-ups and password changes don't form login flows, so this is where
+ * their save prompts come from.
+ */
+export async function onPageLanded(tabId: number, host: string, loginish: boolean) {
+  const c = captures.get(tabId)
+  if (!c?.newPassword || loginish || registrableDomain(host) !== c.domain) return
+  captures.delete(tabId)
+  if (Date.now() - c.at > CAPTURE_TTL_MS) return
+  if (c.password) await offerPasswordChange(tabId, c).catch(() => {})
+  else await offerSaveLogin(tabId, { ...c, password: c.newPassword }).catch(() => {})
+}
+
 /**
  * The recorder calls this when a login flow completes. Offer to save what was
  * typed (or update a changed password), or the sign-in method that was used.
@@ -453,7 +512,7 @@ type VaultMessage =
   | { type: "pk:create"; requestId: number; options: CreateOptions }
   | { type: "pk:cancel"; requestId: number }
   | { type: "sv:enabled" }
-  | { type: "sv:capture"; username?: string; password?: string }
+  | { type: "sv:capture"; username?: string; password?: string; newPassword?: string }
   | { type: "dg:load"; token: string }
   | { type: "dg:choose"; token: string; choice: DialogChoice }
   | { type: "dg:size"; token: string; height: number }
@@ -476,6 +535,7 @@ async function handle(message: VaultMessage, sender: chrome.runtime.MessageSende
         sender,
         typeof message.username === "string" ? message.username.slice(0, 512) : undefined,
         typeof message.password === "string" ? message.password.slice(0, 1024) : undefined,
+        typeof message.newPassword === "string" ? message.newPassword.slice(0, 1024) : undefined,
       )
       return null
     case "dg:load": {

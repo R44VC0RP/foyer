@@ -6,7 +6,7 @@ import { idpForHost, isDedicatedIdpHost, registrableDomain } from "./shared/doma
 import { safeHost } from "./shared/privacy"
 import { getSettings, getSite, putSite } from "./shared/store"
 import { onSurfaceForAutofill, registerAutofill } from "./autofill/service"
-import { onLoginCompleted, registerVault } from "./autofill/vault"
+import { onLoginCompleted, onPageLanded, registerVault } from "./autofill/vault"
 import { registerExternal } from "./autofill/external"
 import type { Action, FlowRecord, Message, Step, Surface } from "./shared/types"
 
@@ -220,6 +220,7 @@ chrome.runtime.onMessage.addListener((message: Message, sender) => {
   const ctx: Context = { tabId, openerTabId: sender.tab?.openerTabId, topFrame: sender.frameId === 0 }
   // Autofill continues email-first logins whether or not recording is paused.
   if (message.type === "foyer:surface") void onSurfaceForAutofill(sender, message.surface).catch(() => {})
+  if (message.type === "foyer:quiet" && ctx.topFrame) void onPageLanded(tabId, message.host, message.loginish).catch(() => {})
   serial(async () => {
     // Pausing stops dataset writes (see finalize/onSurface); flows are still
     // tracked so save prompts and email-first autofill keep working.

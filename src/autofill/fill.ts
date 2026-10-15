@@ -77,6 +77,16 @@ export async function fillFields(targets: FillTarget[], values: FillValues): Pro
     await sleep(30)
   }
 
+  if (values.newPassword) {
+    // Sign-up and change-password forms: the new box and its confirmation.
+    for (const t of targets.filter((x) => x.role === "new-password" && fillable(x.el))) {
+      setInputValue(t.el, values.newPassword)
+      filled.push("new-password")
+      last = t.el
+      await sleep(30)
+    }
+  }
+
   if (values.totp) {
     const boxes = targets.filter((t) => t.role === "otp" && t.split && fillable(t.el)).map((t) => t.el)
     if (boxes.length >= values.totp.length) {

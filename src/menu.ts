@@ -13,6 +13,7 @@ const note = document.getElementById("note")!
 let accounts: Account[] = []
 let active = 0
 let visible = false
+let generate = false
 
 function send<T>(message: object): Promise<T | null> {
   return chrome.runtime.sendMessage(message).catch(() => null) as Promise<T | null>
@@ -75,8 +76,37 @@ function highlight() {
   ;(list.children[active] as HTMLElement | undefined)?.scrollIntoView({ block: "nearest" })
 }
 
+function renderGenerate() {
+  const row = document.createElement("button")
+  row.className = "row active"
+  row.type = "button"
+  const badge = document.createElement("span")
+  badge.className = "badge"
+  badge.textContent = "✱"
+  const text = document.createElement("span")
+  text.className = "text"
+  const title = document.createElement("span")
+  title.className = "title"
+  title.textContent = "Use a strong password"
+  const sub = document.createElement("span")
+  sub.className = "sub"
+  sub.textContent = "20 characters · Foyer offers to save it after you sign up"
+  text.append(title, sub)
+  row.append(badge, text)
+  row.addEventListener("click", (e) => {
+    if (e.isTrusted) pick(0)
+  })
+  list.replaceChildren(row)
+}
+
 async function pick(i: number) {
   if (!visible) return
+  if (generate) {
+    note.textContent = "Filling…"
+    const reply = await send<{ ok: boolean }>({ type: "af:menu-generate", token })
+    if (!reply?.ok) note.textContent = "Couldn't fill. Try again."
+    return
+  }
   const a = accounts[i]
   if (!a) return
   note.textContent = "Filling…"
@@ -101,8 +131,14 @@ async function load() {
     return
   }
   accounts = reply.accounts
-  note.textContent = accounts.length ? `Foyer · ${reply.domain}` : `No logins for ${reply.domain}`
-  render()
+  generate = !!reply.generate
+  if (generate) {
+    note.textContent = `Foyer · ${reply.domain}`
+    renderGenerate()
+  } else {
+    note.textContent = accounts.length ? `Foyer · ${reply.domain}` : `No logins for ${reply.domain}`
+    render()
+  }
   await send({ type: "af:menu-resize", token, height: document.documentElement.scrollHeight })
 }
 

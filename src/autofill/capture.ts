@@ -23,8 +23,11 @@ const IDENTIFIER = new Set(["username", "email", "phone"])
 export function captureOnSubmit(targets: FillTarget[]) {
   const ident = targets.find((t) => IDENTIFIER.has(t.role) && t.el.value)?.el.value
   const password = targets.find((t) => t.role === "password" && t.el.value)?.el.value
-  if (!ident && !password) return
-  const send = () => void chrome.runtime.sendMessage({ type: "sv:capture", username: ident, password }).catch(() => {})
+  // Sign-up and change-password forms: the new password (first box; the
+  // confirmation must match it or the site will reject the form anyway).
+  const newPassword = targets.find((t) => t.role === "new-password" && t.el.value)?.el.value
+  if (!ident && !password && !newPassword) return
+  const send = () => void chrome.runtime.sendMessage({ type: "sv:capture", username: ident, password, newPassword }).catch(() => {})
   // Send synchronously when we already know saving is on: the page may be
   // navigating away this very moment.
   if (enabled?.value) send()

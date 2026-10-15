@@ -18,7 +18,7 @@ export interface PageState {
 
 const MENU_ROW = 52
 const MENU_WIDTH = 320
-const FILLABLE: FieldRole[] = ["username", "email", "phone", "password", "otp"]
+const FILLABLE: FieldRole[] = ["username", "email", "phone", "password", "new-password", "otp"]
 
 let state: PageState
 let host: HTMLElement | null = null
@@ -100,7 +100,7 @@ async function maybeOpen(el: HTMLInputElement, explicit = false) {
   if (anchor === el && host) return
   querying = (async () => {
     const roles = [...new Set(state.targets().map((x) => x.role))]
-    const reply = await ask<QueryReply>({ type: "af:query", presence: { roles } })
+    const reply = await ask<QueryReply>({ type: "af:query", presence: { roles, focused: t.role } })
     if (reply?.token && reply.count > 0) {
       if (document.activeElement === el) openMenu(el, reply.token, reply.count)
     } else emptyUntil.set(el, Date.now() + 15_000)
@@ -171,7 +171,7 @@ export function initAutofill(page: PageState) {
         if (message.token === token) menuHeight = message.height
         break
       case "af:open-menu": {
-        const first = state.targets().find((t) => FILLABLE.includes(t.role))
+        const first = state.targets().find((t) => FILLABLE.includes(t.role) && t.role !== "new-password")
         if (first) {
           // The keyboard shortcut is the user's own request.
           dismissedFor = null

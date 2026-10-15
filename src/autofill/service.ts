@@ -39,7 +39,31 @@ interface FrameTarget {
 
 interface MenuToken extends FrameTarget {
   roles: FieldRole[]
+  focused?: FieldRole
   createdAt: number
+}
+
+/** 20 characters from an unambiguous set, with every class represented. */
+export function generatePassword(length = 20): string {
+  const classes = ["ABCDEFGHJKLMNPQRSTUVWXYZ", "abcdefghijkmnopqrstuvwxyz", "23456789", "-_.!@#%*"]
+  const all = classes.join("")
+  const pick = (set: string) => {
+    // Rejection sampling: no modulo bias.
+    const limit = 256 - (256 % set.length)
+    for (;;) {
+      const [b] = crypto.getRandomValues(new Uint8Array(1))
+      if (b < limit) return set[b % set.length]
+    }
+  }
+  for (;;) {
+    const out = Array.from({ length }, () => pick(all)).join("")
+    if (classes.every((c) => [...out].some((ch) => c.includes(ch)))) return out
+  }
+}
+
+async function canSave(): Promise<boolean> {
+  const hello = await providersHello().catch(() => null)
+  return !!hello?.providers.some((p) => p.status === "ready" && ((p as { capabilities?: string[] }).capabilities ?? []).includes("save"))
 }
 
 /** Identifier-first: after filling the email step, fill the password step too. */
@@ -203,17 +227,28 @@ async function handle(message: AutofillMessage, sender: chrome.runtime.MessageSe
       if (!settings.autofill) return { count: 0 } satisfies QueryReply
       const target = await targetFor(sender)
       if (!target) return { count: 0 } satisfies QueryReply
+      const roles = sanitizeRoles(message.presence)
+      const focused = roles.includes(message.presence?.focused as FieldRole) ? message.presence.focused : undefined
+      // New-password boxes get a strong password, if there's somewhere to save it.
+      if (focused === "new-password") {
+        if (!settings.savePrompts || !(await canSave())) return { count: 0 } satisfies QueryReply
+        sweepTokens()
+        const token = newToken()
+        tokens.set(token, { ...target, roles, focused, createdAt: Date.now() })
+        return { token, count: 1 } satisfies QueryReply
+      }
       const reply = await menuAccounts(target).catch(() => null)
       const count = reply?.accounts.length ?? 0
       if (!count) return { count: 0 } satisfies QueryReply
       sweepTokens()
       const token = newToken()
-      tokens.set(token, { ...target, roles: sanitizeRoles(message.presence), createdAt: Date.now() })
+      tokens.set(token, { ...target, roles, focused, createdAt: Date.now() })
       return { token, count } satisfies QueryReply
     }
     case "af:menu-load": {
       const t = tokenFrom(message.token, sender)
       if (!t) return null
+      if (t.focused === "new-password") return { generate: true, domain: t.domain, accounts: [], errors: [] } satisfies MenuLoadReply
       const reply = await menuAccounts(t)
       return { domain: t.domain, accounts: reply.accounts, errors: reply.errors ?? [] } satisfies MenuLoadReply
     }
@@ -232,6 +267,14 @@ async function handle(message: AutofillMessage, sender: chrome.runtime.MessageSe
       }
       await fill(t, account.provider, account.ref, t.roles, account)
       return { ok: true }
+    }
+    case "af:menu-generate": {
+      const t = tokenFrom(message.token, sender)
+      if (!t || t.focused !== "new-password") return { ok: false }
+      tokens.delete(message.token)
+      await sendToFrame(t, { type: "af:close-menu", token: message.token })
+      const ok = await sendToFrame(t, { type: "af:fill", values: { newPassword: generatePassword() }, submit: false })
+      return { ok }
     }
     case "af:menu-dismiss": {
       const t = tokenFrom(message.token, sender)
@@ -261,7 +304,7 @@ async function handle(message: AutofillMessage, sender: chrome.runtime.MessageSe
 }
 
 function sanitizeRoles(presence: FieldPresence): FieldRole[] {
-  const allowed: FieldRole[] = ["username", "email", "phone", "password", "otp"]
+  const allowed: FieldRole[] = ["username", "email", "phone", "password", "new-password", "otp"]
   return Array.isArray(presence?.roles) ? presence.roles.filter((r) => allowed.includes(r)) : []
 }
 

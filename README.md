@@ -46,7 +46,8 @@ keeps passwords itself.
   toolbar popup, or press ⌥⇧F. Email-first logins fill the password step
   automatically, and one-time codes fill on the code screen.
 - **Save:** after you sign in, Foyer offers to save a new login or update a
-  changed password.
+  changed password. On sign-up and change-password forms it suggests a strong
+  password and saves or updates it once the form goes through.
 - **Passkeys:** when a site asks for a passkey, Foyer can create one or sign in
   with one kept in your password manager. "Use another device" falls back to
   the browser.

@@ -68,7 +68,7 @@ function buildSurface(): Surface | null {
   if (!kind && (providers.length || passkeyAutofill) && scan.fields.length) kind = "login"
   if (!kind) return null
   if (kind === "login" && isDedicatedIdpHost(location.hostname)) kind = "idp"
-  if (kind === "login" || kind === "idp" || kind === "mfa") {
+  if (kind !== "reset") {
     fillTargets = scan.fields.map((f) => ({ el: f.el, role: f.spec.role, split: f.spec.split }))
     submitControl = scan.submit?.el
     primeCapture()
