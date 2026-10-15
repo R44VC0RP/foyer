@@ -7,7 +7,9 @@
   "scripts": {
     "build": "bun scripts/build.ts",
     "watch": "bun scripts/build.ts --watch",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "bridge:install": "bun bridge/install.ts",
+    "bridge:uninstall": "bun bridge/install.ts --uninstall"
   },
   "devDependencies": {
     "@types/bun": "^1.4.3",
