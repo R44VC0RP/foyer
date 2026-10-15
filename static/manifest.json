@@ -1,0 +1,36 @@
+{
+  "manifest_version": 3,
+  "name": "Foyer",
+  "short_name": "Foyer",
+  "version": "0.1.0",
+  "description": "Learns how each site logs you in (password, passkey, Google and friends) without keeping anything personal.",
+  "minimum_chrome_version": "120",
+  "permissions": ["storage", "webNavigation", "alarms", "activeTab"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["passkey-hook.js"],
+      "run_at": "document_start",
+      "all_frames": true,
+      "world": "MAIN"
+    },
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["content.js"],
+      "run_at": "document_start",
+      "all_frames": true
+    }
+  ],
+  "action": {
+    "default_title": "Foyer",
+    "default_popup": "popup.html"
+  },
+  "options_ui": {
+    "page": "dashboard.html",
+    "open_in_tab": true
+  },
+  "incognito": "not_allowed"
+}

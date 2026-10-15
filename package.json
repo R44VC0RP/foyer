@@ -1,0 +1,17 @@
+{
+  "name": "foyer",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Chrome extension that learns how sites log you in, without keeping anything personal.",
+  "type": "module",
+  "scripts": {
+    "build": "bun scripts/build.ts",
+    "watch": "bun scripts/build.ts --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.3",
+    "@types/chrome": "^0.3.5",
+    "typescript": "^7.0.2"
+  }
+}
