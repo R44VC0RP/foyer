@@ -39,7 +39,7 @@ export type Method =
   | "otp"
   | `sso:${Provider}`
 
-export type SurfaceKind = "login" | "signup" | "mfa" | "reset" | "idp"
+export type SurfaceKind = "login" | "signup" | "change-password" | "mfa" | "reset" | "idp"
 
 export interface FieldSpec {
   role: FieldRole

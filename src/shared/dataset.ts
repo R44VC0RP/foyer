@@ -223,7 +223,7 @@ export function toExport(sites: SiteRecipe[]): Dataset {
 // strings back through the privacy filters.
 
 const ROLES = new Set(["username", "email", "phone", "password", "new-password", "otp", "captcha"])
-const KINDS = new Set(["login", "signup", "mfa", "reset", "idp"])
+const KINDS = new Set(["login", "signup", "change-password", "mfa", "reset", "idp"])
 const PROVIDERS = new Set([
   "google", "apple", "microsoft", "github", "facebook", "x", "linkedin", "gitlab", "slack", "discord", "amazon", "okta", "sso",
 ])

@@ -1,32 +1,32 @@
-// Login-surface detection. Pure DOM reads of structure and attributes; the only
-// text read is the label of buttons and links, which is matched against fixed
-// vocabularies and never stored.
+// Login-surface detection.
+//
+// Fields and forms are scored with weighted clues (see clues.ts): labels,
+// placeholders, ids, autocomplete, input type, neighbouring fields and the
+// text around the form all add or subtract points. Text is read only to be
+// matched in memory; what leaves this file is the resulting role and a
+// selector built from non-personal attributes.
 
+import {
+  bestRole,
+  FIELD_THRESHOLD,
+  FORM_KINDS,
+  providerFromLabel,
+  scoreField,
+  scoreFormText,
+  squash,
+  words,
+  type FieldFacts,
+  type FormKind,
+} from "./clues"
 import { safeToken } from "./shared/privacy"
 import type { ControlSpec, FieldRole, FieldSpec, Provider, ProviderSpec, SurfaceKind } from "./shared/types"
 
 export const LOGIN_URL = /log-?in|log_in|logon|sign-?in|sign_in|signon|auth|sso|saml|oauth|session|identifier|challenge|mfa|2fa|two-factor|verify|webauthn|passkey/i
 const SIGNUP_URL = /sign-?up|sign_up|register|registration|join|create-account|onboard/i
 const RESET_URL = /forgot|reset|recover/i
-const SIGN_IN_TEXT = /\b(sign ?in|log ?in|login|sign ?on)\b/i
+const CHANGE_PASSWORD_URL = /change-?password|password-?change|update-?password|settings\/security/i
 const SUBMIT_TEXT = /^\s*(sign ?in|log ?in|login|sign ?on|continue|next|submit|verify|confirm|go)\b/i
-const SIGNUP_TEXT = /\b(sign ?up|register|create (an |your )?account|join now)\b/i
 
-const PROVIDER_TEXT: Array<[Provider, RegExp]> = [
-  ["google", /\bgoogle\b/i],
-  ["apple", /\bapple\b/i],
-  ["microsoft", /\b(microsoft|outlook|office ?365|azure ad|entra id)\b/i],
-  ["github", /\bgithub\b/i],
-  ["facebook", /\bfacebook\b/i],
-  ["x", /\b(twitter|(with|continue with|sign in with|log in with) x)\b/i],
-  ["linkedin", /\blinkedin\b/i],
-  ["gitlab", /\bgitlab\b/i],
-  ["slack", /\bslack\b/i],
-  ["discord", /\bdiscord\b/i],
-  ["amazon", /\bamazon\b/i],
-  ["okta", /\bokta\b/i],
-  ["sso", /\b(sso|single sign[- ]?on|saml|enterprise (login|log in|sign[- ]?in)|work account|company account|organi[sz]ation account)\b/i],
-]
 const PASSKEY_TEXT = /\b(passkeys?|security key|face ?id|touch ?id|windows hello|biometrics?)\b/i
 const MAGIC_LINK_TEXT =
   /\b(magic link|(email|send|text) me an? (sign[- ]?in |login |log[- ]?in )?link|(email|send) (an? )?(sign[- ]?in|login|log[- ]?in) link|sign in with (an )?email link)\b/i
@@ -38,6 +38,9 @@ const SKIP_INPUT_TYPES = new Set([
   "datetime-local", "month", "week", "time", "search",
 ])
 
+/** Minimum score for the page to count as a given kind of form. */
+const FORM_THRESHOLD = 3
+
 export function isVisible(el: Element): boolean {
   const rect = el.getBoundingClientRect()
   if (rect.width < 2 || rect.height < 2) return false
@@ -45,12 +48,14 @@ export function isVisible(el: Element): boolean {
   return style.visibility !== "hidden" && style.display !== "none" && Number(style.opacity) > 0.05
 }
 
+const innerText = (el: Element | null | undefined) => ((el as HTMLElement | null)?.innerText ?? "").trim()
+
 /** Label of a button or link. Matched against vocabularies only, never stored. */
 export function controlText(el: Element): string {
   const input = el instanceof HTMLInputElement && (el.type === "submit" || el.type === "button") ? el.value : ""
   const text =
     el.getAttribute("aria-label") ||
-    (el as HTMLElement).innerText ||
+    innerText(el) ||
     input ||
     el.getAttribute("title") ||
     el.querySelector("img[alt]")?.getAttribute("alt") ||
@@ -58,36 +63,60 @@ export function controlText(el: Element): string {
   return text.replace(/\s+/g, " ").trim().slice(0, 120)
 }
 
-function attrHaystack(el: HTMLInputElement): string {
-  return [el.name, el.id, el.getAttribute("aria-label"), el.placeholder, el.getAttribute("data-testid")]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase()
-}
+// ---- Field facts ---------------------------------------------------------------
 
-export function classifyInput(el: Element): FieldRole | null {
-  if (!(el instanceof HTMLInputElement)) return null
-  const type = (el.getAttribute("type") || "text").toLowerCase()
-  if (SKIP_INPUT_TYPES.has(type)) return null
-  const ac = (el.getAttribute("autocomplete") || "").toLowerCase()
-  const tokens = new Set(ac.split(/\s+/))
-  const hay = attrHaystack(el)
-
-  if (tokens.has("one-time-code")) return "otp"
-  if (type === "password") {
-    if (tokens.has("new-password")) return "new-password"
-    if (/\b(otp|pin|totp|2fa|mfa)\b/.test(hay)) return "otp"
-    return "password"
+/** Closest preceding text when a field has no <label>, e.g. a <span> above it. */
+function nearbyText(el: Element): string {
+  let node: Element | null = el
+  for (let depth = 0; node && depth < 3; depth++) {
+    let sibling = node.previousElementSibling
+    for (let i = 0; sibling && i < 2; i++, sibling = sibling.previousElementSibling) {
+      if (sibling.matches("input, select, textarea") || sibling.querySelector("input, select, textarea")) return ""
+      const text = innerText(sibling)
+      if (text) return text.length <= 80 ? text : ""
+    }
+    node = node.parentElement
   }
-  if (/(^|[^a-z])(otp|totp|2fa|mfa|one.?time|verification.?code|security.?code|auth.?code|sms.?code|passcode)([^a-z]|$)/.test(hay))
-    return "otp"
-  if (/captcha/.test(hay)) return "captcha"
-  if (type === "email" || tokens.has("email") || /e-?mail/.test(hay)) return "email"
-  if (type === "tel" || tokens.has("tel") || tokens.has("tel-national") || /phone|mobile/.test(hay)) return "phone"
-  if (tokens.has("username") || tokens.has("webauthn") || /user.?name|userid|user.?id|login|account|identifier|signin|sign-in/.test(hay))
-    return "username"
-  return null
+  return ""
 }
+
+function labelText(el: HTMLInputElement): string {
+  const parts: string[] = []
+  for (const label of Array.from(el.labels ?? [])) parts.push(innerText(label))
+  const labelledBy = el.getAttribute("aria-labelledby")
+  if (labelledBy) for (const id of labelledBy.split(/\s+/)) parts.push(innerText(document.getElementById(id)))
+  parts.push(el.getAttribute("aria-label") ?? "", el.placeholder ?? "", el.getAttribute("title") ?? "")
+  if (!parts.some(Boolean)) parts.push(nearbyText(el))
+  // "you@example.com" as a placeholder means an email box.
+  if (el.placeholder?.includes("@")) parts.push("email")
+  return parts.filter(Boolean).join(" ").slice(0, 300)
+}
+
+function factsFor(el: HTMLInputElement): FieldFacts {
+  const code = [el.id, el.name, el.className, el.getAttribute("data-testid"), el.getAttribute("data-test")]
+    .filter((v): v is string => typeof v === "string" && v.length > 0)
+    .join(" ")
+  return {
+    type: (el.getAttribute("type") || "text").toLowerCase(),
+    autocomplete: (el.getAttribute("autocomplete") || "").toLowerCase().split(/\s+/).filter(Boolean),
+    display: words(labelText(el)),
+    code: squash(words(code.slice(0, 300))),
+    maxLength: el.maxLength > 0 ? el.maxLength : 0,
+    inputMode: (el.getAttribute("inputmode") || "").toLowerCase(),
+  }
+}
+
+function eligible(el: Element): el is HTMLInputElement {
+  return el instanceof HTMLInputElement && !SKIP_INPUT_TYPES.has((el.getAttribute("type") || "text").toLowerCase())
+}
+
+/** Role of a single field on its own, without page context. */
+export function classifyInput(el: Element): FieldRole | null {
+  if (!eligible(el)) return null
+  return bestRole(scoreField(factsFor(el)))
+}
+
+// ---- Selectors -----------------------------------------------------------------
 
 // Only ids and attribute values that need no escaping are used, so selectors
 // stay in a small grammar that imports can validate (see isSafeSelector).
@@ -146,16 +175,21 @@ export function fieldSpec(el: HTMLInputElement, role: FieldRole): FieldSpec {
   return spec
 }
 
+// ---- Controls ------------------------------------------------------------------
+
+const PROVIDER_ATTR = /\b(google|apple|microsoft|github|facebook|twitter|linkedin|gitlab|slack|discord|amazon|okta)\b/i
+
 export function providerForControl(el: Element, text: string): Provider | null {
-  if (!text || text.length > 60) return null
-  const isLink = el instanceof HTMLAnchorElement
-  if (isLink) {
-    const href = el.getAttribute("href") || ""
-    const authish = SIGN_IN_TEXT.test(text) || /\b(with|continue|connect)\b/i.test(text) || AUTH_HREF.test(href)
-    if (!authish) return null
-  }
-  for (const [provider, pattern] of PROVIDER_TEXT) if (pattern.test(text)) return provider
-  return null
+  // Some sites label provider buttons explicitly; trust that over the text.
+  const attr = el.getAttribute("data-provider") || el.getAttribute("data-social") || ""
+  const fromAttr = PROVIDER_ATTR.exec(attr)?.[1]?.toLowerCase()
+  if (fromAttr) return (fromAttr === "twitter" ? "x" : fromAttr) as Provider
+  const match = text ? providerFromLabel(text) : null
+  if (!match) return null
+  // A footer "GitHub" link is not a sign-in button; links need a connector
+  // ("Continue with GitHub") or an auth-looking destination.
+  if (el instanceof HTMLAnchorElement && !match.connector && !AUTH_HREF.test(el.getAttribute("href") || "")) return null
+  return match.provider
 }
 
 export type ControlRole =
@@ -163,6 +197,13 @@ export type ControlRole =
   | { type: "passkey" }
   | { type: "magic-link" }
   | { type: "submit" }
+
+interface ScannedField {
+  el: HTMLInputElement
+  facts: FieldFacts
+  score: Record<FieldRole, number>
+  role: FieldRole | null
+}
 
 export interface ScanResult {
   kind: SurfaceKind | null
@@ -173,53 +214,81 @@ export interface ScanResult {
   magicLink?: { el: Element; spec: ControlSpec }
 }
 
-function collectFields(): ScanResult["fields"] {
-  const out: ScanResult["fields"] = []
-  const inputs = Array.from(document.querySelectorAll("input")).slice(0, 200)
+function collectFields(): { fields: ScannedField[]; otpBoxes: HTMLInputElement[] } {
+  const fields: ScannedField[] = []
   const otpBoxes: HTMLInputElement[] = []
-  for (const el of inputs) {
-    if (!isVisible(el)) continue
-    const role = classifyInput(el)
-    // One-character boxes for codes: group into a single split OTP field.
-    if (el.maxLength === 1 && (role === "otp" || role === null || el.inputMode === "numeric")) {
+  for (const el of Array.from(document.querySelectorAll("input")).slice(0, 200)) {
+    if (!eligible(el) || !isVisible(el)) continue
+    // One-character boxes for codes are grouped into a single split OTP field.
+    if (el.maxLength === 1) {
       otpBoxes.push(el)
       continue
     }
-    if (role) out.push({ el, spec: fieldSpec(el, role) })
+    const facts = factsFor(el)
+    fields.push({ el, facts, score: scoreField(facts), role: null })
   }
-  if (otpBoxes.length >= 4) {
-    const spec = fieldSpec(otpBoxes[0], "otp")
-    spec.split = otpBoxes.length
-    out.push({ el: otpBoxes[0], spec })
-    for (const box of otpBoxes.slice(1)) out.push({ el: box, spec: { ...spec } })
+
+  // Context: a password field right after another one is a confirmation,
+  // unless it's really a PIN or token box.
+  let previousPassword: HTMLInputElement | null = null
+  for (const f of fields) {
+    if (f.facts.type !== "password" || f.score.otp >= FIELD_THRESHOLD) continue
+    if (previousPassword && previousPassword.form === f.el.form) {
+      f.score["new-password"] += 4
+      f.score.password -= 4
+    }
+    previousPassword = f.el
   }
-  return out
+  for (const f of fields) f.role = bestRole(f.score)
+  return { fields, otpBoxes: otpBoxes.length >= 4 && otpBoxes.length <= 8 ? otpBoxes : [] }
 }
 
-function collectControls(fields: ScanResult["fields"]) {
+/** The form that holds the most important field, if the page uses <form>. */
+function primaryForm(fields: ScannedField[]): HTMLFormElement | null {
+  const anchor =
+    fields.find((f) => f.role === "password" || f.role === "new-password") ??
+    fields.find((f) => f.role === "username" || f.role === "email" || f.role === "phone") ??
+    fields.find((f) => f.role === "otp")
+  return anchor ? (anchor.el.form ?? anchor.el.closest("form")) : null
+}
+
+function contextText(form: HTMLFormElement | null): string {
+  const parts = [document.title]
+  for (const h of Array.from(document.querySelectorAll("h1, h2, h3, [role=heading]")).slice(0, 6)) parts.push(innerText(h))
+  if (form) {
+    parts.push(innerText(form).slice(0, 3000))
+    for (const input of Array.from(form.querySelectorAll<HTMLInputElement>("input[type=submit], input[type=button]")))
+      parts.push(input.value)
+  }
+  return words(parts.join(" \n "))
+}
+
+function collectControls(form: HTMLFormElement | null) {
   const providers: ScanResult["providers"] = []
   let passkey: ScanResult["passkey"]
   let magicLink: ScanResult["magicLink"]
   let submit: ScanResult["submit"]
-  let signInText = false
-  let signUpText = false
+  const buttonText: string[] = []
   const seen = new Set<Provider>()
-  const formScope = fields[0]?.el.form ?? fields[0]?.el.closest("form") ?? null
 
-  const controls = Array.from(document.querySelectorAll(CLICKABLE)).slice(0, 400)
-  for (const el of controls) {
+  // The login form's own buttons first, so a huge nav can't push them past the cap.
+  const candidates = new Set<Element>(form ? Array.from(form.querySelectorAll(CLICKABLE)) : [])
+  for (const el of Array.from(document.querySelectorAll(CLICKABLE))) {
+    if (candidates.size >= 500) break
+    candidates.add(el)
+  }
+  for (const el of candidates) {
     if (!isVisible(el)) continue
     const text = controlText(el)
-    if (!text) continue
     const provider = providerForControl(el, text)
     if (provider) {
-      if (SIGN_IN_TEXT.test(text) || /\b(continue|with)\b/i.test(text)) signInText = true
       if (!seen.has(provider)) {
         seen.add(provider)
         providers.push({ el, spec: { provider, selector: selectorFor(el), via: "button" } })
       }
       continue
     }
+    if (!text) continue
     if (text.length <= 60 && PASSKEY_TEXT.test(text) && !passkey) {
       passkey = { el, spec: { selector: selectorFor(el) } }
       continue
@@ -228,13 +297,11 @@ function collectControls(fields: ScanResult["fields"]) {
       magicLink = { el, spec: { selector: selectorFor(el) } }
       continue
     }
-    const inScope = formScope ? formScope.contains(el) : true
-    if (inScope && !(el instanceof HTMLAnchorElement)) {
-      if (SIGN_IN_TEXT.test(text) && text.length <= 40) signInText = true
-      if (SIGNUP_TEXT.test(text) && text.length <= 40) signUpText = true
+    const inScope = form ? form.contains(el) : true
+    if (inScope && !(el instanceof HTMLAnchorElement) && text.length <= 40) {
+      buttonText.push(text)
       const isSubmitType = (el as HTMLButtonElement).type === "submit"
-      if (!submit && (SUBMIT_TEXT.test(text) || (isSubmitType && formScope)) && text.length <= 40)
-        submit = { el, spec: { selector: selectorFor(el) } }
+      if (!submit && (SUBMIT_TEXT.test(text) || (isSubmitType && form))) submit = { el, spec: { selector: selectorFor(el) } }
     }
   }
 
@@ -252,34 +319,128 @@ function collectControls(fields: ScanResult["fields"]) {
     }
   }
 
-  return { providers, passkey, magicLink, submit, signInText, signUpText }
+  return { providers, passkey, magicLink, submit, buttonText }
+}
+
+function decideKind(
+  fields: ScannedField[],
+  otpBoxes: number,
+  text: string,
+  controls: ReturnType<typeof collectControls>,
+): FormKind | null {
+  const count = (...roles: FieldRole[]) => fields.filter((f) => f.role && roles.includes(f.role)).length
+  const pw = count("password")
+  const npw = count("new-password")
+  const ident = count("username", "email", "phone")
+  const otp = count("otp") + (otpBoxes ? 1 : 0)
+  const ac = new Set(fields.flatMap((f) => f.facts.autocomplete))
+  const hasProviders = controls.providers.length > 0
+  const url = location.hostname + location.pathname
+
+  const score = scoreFormText(text + words(controls.buttonText.join(" ")))
+  // Shape of the form.
+  if (pw === 1 && npw === 0) score.login += 5
+  if (pw === 0 && npw === 0 && ident > 0) score.login += 1
+  if (pw >= 2) score.login -= 3
+  if (npw > 0 && !ac.has("current-password")) score.login -= 3
+  if (hasProviders) score.login += 2
+  if (controls.passkey || ac.has("webauthn")) score.login += 3
+  if (ac.has("current-password")) score.login += 3
+  if (ac.has("username") && pw === 0) score.login += 2
+
+  // With a single password box, autocomplete=new-password is a weak hint
+  // (sites use it to block autofill on logins); wording has to confirm it.
+  const single = pw + npw === 1
+  if (npw > 0 && pw === 0) score.signup += single ? 1 : 3
+  if (pw + npw >= 2) score.signup += 3
+  if (ac.has("new-password")) score.signup += single ? 1 : 3
+  if (single && npw === 1) score.login += 2
+  if (pw === 1 && npw === 0) score.signup -= 2
+  // A "Create account" link next to an email-first sign-in doesn't make it a sign-up.
+  if (pw + npw === 0 && !SIGNUP_URL.test(url)) score.signup = Math.min(score.signup, 2)
+
+  // Shape alone is weak here (two password boxes can be password + PIN); the
+  // "current / new password" wording does most of the work.
+  if ((pw >= 1 && npw >= 1) || pw + npw >= 3) score["change-password"] += 2
+  if (ac.has("current-password") && ac.has("new-password")) score["change-password"] += 4
+
+  if (ident > 0 && pw + npw === 0) score.reset += 1
+  if (pw + npw > 0) score.reset -= 6
+
+  if (otp > 0 && pw === 0) score.mfa += 6
+  if (otp > 0 && pw > 0) score.mfa += 1
+
+  if (ident > 0 && pw + npw === 0 && !hasProviders) score.newsletter += 1
+  if (pw + npw > 0) score.newsletter -= 8
+  if (hasProviders) score.newsletter -= 5
+
+  // Where we are.
+  if (LOGIN_URL.test(url)) {
+    score.login += 2
+    score.mfa += 1
+  }
+  if (SIGNUP_URL.test(url)) score.signup += 2
+  if (RESET_URL.test(url)) score.reset += 2
+  if (CHANGE_PASSWORD_URL.test(url)) score["change-password"] += 2
+
+  let best: FormKind | null = null
+  for (const kind of FORM_KINDS) if (score[kind] >= FORM_THRESHOLD && (!best || score[kind] > score[best])) best = kind
+  return best
+}
+
+/** Once the form's kind is known, settle password roles that depend on it. */
+function adjustRoles(fields: ScannedField[], kind: FormKind) {
+  const passwords = fields.filter((f) => f.facts.type === "password" && (f.role === "password" || f.role === "new-password"))
+  if (kind === "signup") {
+    for (const f of passwords) if (!f.facts.autocomplete.includes("current-password")) f.role = "new-password"
+  } else if (kind === "change-password") {
+    passwords.forEach((f, i) => {
+      if (f.facts.autocomplete.includes("new-password")) f.role = "new-password"
+      else if (f.facts.autocomplete.includes("current-password")) f.role = "password"
+      else f.role = i === 0 ? "password" : "new-password"
+    })
+  } else if (kind === "login") {
+    // Sites sometimes set autocomplete=new-password on a login box to block autofill.
+    if (passwords.length === 1) passwords[0].role = "password"
+    else for (const f of passwords) if (f.role === "new-password" && !f.facts.autocomplete.includes("new-password")) f.role = "password"
+  }
+}
+
+const SURFACE_KIND: Record<FormKind, SurfaceKind | null> = {
+  login: "login",
+  signup: "signup",
+  "change-password": "change-password",
+  reset: "reset",
+  mfa: "mfa",
+  newsletter: null,
 }
 
 export function scanPage(): ScanResult {
-  const fields = collectFields()
-  const { providers, passkey, magicLink, submit, signInText, signUpText } = collectControls(fields)
-  const roles = fields.map((f) => f.spec.role)
-  const has = (r: FieldRole) => roles.includes(r)
-  const url = location.hostname + location.pathname
-  const loginUrl = LOGIN_URL.test(url)
-  const identifier = has("username") || has("email") || has("phone")
-  const identifierHint = fields.some((f) => /\b(username|webauthn)\b/.test(f.spec.autocomplete ?? ""))
-  const passwords = roles.filter((r) => r === "password").length
+  const { fields: all, otpBoxes } = collectFields()
+  const form = primaryForm(all)
+  // Judge and report the primary form only, so a sign-up form or newsletter
+  // box elsewhere on the page doesn't change what the login form is.
+  const inScope = (el: Element) => !form || form.contains(el)
+  const scanned = all.filter((f) => inScope(f.el))
+  const controls = collectControls(form)
+  const formKind = decideKind(scanned, otpBoxes.length, contextText(form), controls)
+  if (formKind) adjustRoles(scanned, formKind)
 
-  let kind: SurfaceKind | null = null
-  if (has("new-password") || (signUpText && !signInText) || (SIGNUP_URL.test(url) && !loginUrl)) {
-    if (has("new-password") || passwords > 0 || identifier) kind = "signup"
-  } else if (passwords > 0) {
-    kind = passwords > 1 ? "signup" : "login"
-  } else if (has("otp")) {
-    kind = "mfa"
-  } else if (identifier && RESET_URL.test(url)) {
-    kind = "reset"
-  } else if (identifier && (signInText || loginUrl || identifierHint)) {
-    kind = "login"
-  } else if ((providers.length || passkey || magicLink) && (loginUrl || signInText)) {
-    kind = "login"
+  const fields: ScanResult["fields"] = scanned
+    .filter((f) => f.role)
+    .map((f) => ({ el: f.el, spec: fieldSpec(f.el, f.role!) }))
+  if (otpBoxes.length && inScope(otpBoxes[0])) {
+    const spec = fieldSpec(otpBoxes[0], "otp")
+    spec.split = otpBoxes.length
+    for (const box of otpBoxes) fields.push({ el: box, spec: { ...spec } })
   }
 
-  return { kind, fields, providers, submit, passkey, magicLink }
+  return {
+    kind: formKind ? SURFACE_KIND[formKind] : null,
+    fields,
+    providers: controls.providers,
+    submit: controls.submit,
+    passkey: controls.passkey,
+    magicLink: controls.magicLink,
+  }
 }

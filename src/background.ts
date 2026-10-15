@@ -154,8 +154,8 @@ async function onSurface(ctx: Context, surface: Surface) {
     await putSite(site)
   }
 
-  // Sign-up and reset screens are recorded as surfaces but don't drive flows.
-  if (foreignFrame || surface.kind === "signup" || surface.kind === "reset") return
+  // Sign-up, reset and change-password screens are recorded as surfaces but don't drive flows.
+  if (foreignFrame || surface.kind === "signup" || surface.kind === "reset" || surface.kind === "change-password") return
 
   if (flow && !belongs(flow, surface.host, now)) {
     await finalize(flow, flow.committed ? "completed" : "unknown")
