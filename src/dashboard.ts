@@ -1,7 +1,8 @@
 import { parseDataset, toExport } from "./shared/dataset"
-import { allSites, clearSites, deleteSite, importSites } from "./shared/store"
-import type { SiteRecipe } from "./shared/types"
-import { flowView, h, methodLabel, offersView } from "./ui"
+import type { StatusReply } from "./autofill/messages"
+import { allSites, clearSites, deleteSite, getSettings, importSites, setSettings } from "./shared/store"
+import type { Settings, SiteRecipe } from "./shared/types"
+import { chip, flowView, h, methodLabel, offersView } from "./ui"
 
 const root = document.getElementById("app")!
 const status = h("span", { class: "muted" })
@@ -56,6 +57,74 @@ function siteRow(site: SiteRecipe): HTMLElement {
   return details
 }
 
+const SETTING_LABELS: Array<[keyof Settings, string, string]> = [
+  ["autofill", "Autofill", "Offer saved accounts under login fields."],
+  ["savePrompts", "Offer to save", "Ask to save new or changed passwords, passkeys and sign-in methods to your password manager."],
+  ["passkeys", "Passkeys", "Create and use passkeys stored in your password manager."],
+  ["autosubmit", "Submit after filling", "Press the sign-in button once a login is filled."],
+  ["paused", "Pause recording", "Stop adding login structure to the dataset. Autofill keeps working."],
+]
+
+async function managersSection(): Promise<HTMLElement> {
+  const [settings, status] = await Promise.all([
+    getSettings(),
+    chrome.runtime.sendMessage({ type: "af:status" }).catch(() => null) as Promise<StatusReply | null>,
+  ])
+  const toggles = SETTING_LABELS.map(([key, label, hint]) => {
+    const box = h("input", { type: "checkbox" })
+    box.checked = settings[key]
+    box.onchange = () => setSettings({ [key]: box.checked })
+    return h("label", {}, box, h("span", {}, h("strong", {}, label), " ", h("span", { class: "muted" }, hint)))
+  })
+  const providers = status?.connected
+    ? status.providers.length
+      ? h(
+          "div",
+          { class: "chips" },
+          ...status.providers.map((p) => chip(`${p.name}: ${p.status}${p.detail ? ` (${p.detail})` : ""}`, p.status === "ready" ? "accent" : "default")),
+        )
+      : h("p", { class: "muted" }, "Bridge connected, but no password managers are configured.")
+    : h(
+        "p",
+        { class: "muted" },
+        "Not connected. Install the bridge so Foyer can reach your password manager: ",
+        h("code", {}, "bun run bridge:install"),
+        `, then reload Foyer.${status?.error ? ` (${status.error})` : ""}`,
+      )
+  const { extensionProviders = [] } = (await chrome.storage.local.get("extensionProviders")) as { extensionProviders?: string[] }
+  const extInput = h("input", { type: "text", placeholder: "Extension id (32 letters a–p)", spellcheck: "false" })
+  const addExt = h("button", { class: "small" }, "Allow")
+  addExt.onclick = async () => {
+    const id = extInput.value.trim()
+    if (!/^[a-p]{32}$/.test(id)) return flash("That isn't an extension id.")
+    await chrome.storage.local.set({ extensionProviders: [...new Set([...extensionProviders, id])] })
+    render()
+  }
+  const extList = extensionProviders.map((id) => {
+    const remove = h("button", { class: "ghost danger small" }, "Remove")
+    remove.onclick = async () => {
+      await chrome.storage.local.set({ extensionProviders: extensionProviders.filter((x) => x !== id) })
+      render()
+    }
+    return h("div", { class: "row" }, h("code", {}, id), remove)
+  })
+  return h(
+    "section",
+    { class: "managers" },
+    h("h2", {}, "Password managers"),
+    providers,
+    h("div", { class: "settings" }, ...toggles),
+    h("h2", {}, "Password manager extensions"),
+    h(
+      "p",
+      { class: "muted note" },
+      "Allowlisted extensions can act as password managers for Foyer and read Foyer's login recipe for a page. See docs/PROVIDERS.md.",
+    ),
+    ...extList,
+    h("div", { class: "row" }, extInput, addExt),
+  )
+}
+
 async function render() {
   const sites = await allSites()
   const shown = filter ? sites.filter((s) => s.domain.includes(filter)) : sites
@@ -90,6 +159,8 @@ async function render() {
       h("div", {}, h("h1", {}, "Foyer dataset"), h("div", { class: "muted" }, `${sites.length} sites · ${flows} login flows`)),
       h("div", { class: "row" }, status, search, importBtn, fileInput, exportBtn, clearBtn),
     ),
+    await managersSection(),
+    h("h2", {}, "Dataset"),
     h(
       "p",
       { class: "muted note" },

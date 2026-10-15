@@ -40,9 +40,17 @@ export async function importSites(sites: SiteRecipe[]): Promise<number> {
   return sites.length
 }
 
+export const DEFAULT_SETTINGS: Settings = {
+  paused: false,
+  autofill: true,
+  savePrompts: true,
+  passkeys: true,
+  autosubmit: false,
+}
+
 export async function getSettings(): Promise<Settings> {
   const { settings } = await chrome.storage.local.get("settings")
-  return { paused: false, ...(settings as Partial<Settings> | undefined) }
+  return { ...DEFAULT_SETTINGS, ...(settings as Partial<Settings> | undefined) }
 }
 
 export async function setSettings(patch: Partial<Settings>): Promise<Settings> {

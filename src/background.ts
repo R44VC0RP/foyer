@@ -5,6 +5,9 @@ import { classifyFlow, emptySite, flowSignature, recordFlow, recordSurface, toda
 import { idpForHost, isDedicatedIdpHost, registrableDomain } from "./shared/domains"
 import { safeHost } from "./shared/privacy"
 import { getSettings, getSite, putSite } from "./shared/store"
+import { onSurfaceForAutofill, registerAutofill } from "./autofill/service"
+import { onLoginCompleted, registerVault } from "./autofill/vault"
+import { registerExternal } from "./autofill/external"
 import type { Action, FlowRecord, Message, Step, Surface } from "./shared/types"
 
 const IDLE_MS = 5 * 60_000
@@ -130,6 +133,9 @@ async function finalize(flow: ActiveFlow, outcome: FlowRecord["outcome"]) {
   const steps = flow.steps.filter((s) => s.actions.length > 0)
   if (!steps.length) return
   const { method, mfa } = classifyFlow(steps)
+  // Offer to save the login or sign-in method; not awaited, the prompt waits on the user.
+  if (outcome === "completed") void onLoginCompleted(flow.tabIds, flow.domain, method).catch(() => {})
+  if ((await getSettings()).paused) return
   const date = today()
   const site = (await getSite(flow.domain)) ?? emptySite(flow.domain)
   recordFlow(site, { signature: flowSignature(steps), method, mfa, outcome, steps, seen: 1, firstSeen: date, lastSeen: date })
@@ -145,7 +151,7 @@ async function onSurface(ctx: Context, surface: Surface) {
   const foreignFrame = !ctx.topFrame && !idpForHost(surface.host) && domain !== (flow?.domain ?? session.lastSite[ctx.tabId] ?? domain)
   // Pages on unknown hosts mid-SSO (an employer's IdP) aren't recorded as sites.
   const corporateIdp = !!flow && !ownOrIdp(flow, surface.host) && lingering(flow, now)
-  if (!corporateIdp) {
+  if (!corporateIdp && !(await getSettings()).paused) {
     // Tenant-hosted login pages (acme.auth0.com -> *.auth0.com) are the site's
     // own login screen; shared ones (accounts.google.com) belong to the IdP.
     const owner = surface.host.startsWith("*.") ? (flow?.domain ?? originDomain(ctx, surface.host)) : domain
@@ -203,12 +209,20 @@ async function onQuiet(ctx: Context, host: string, loginish: boolean) {
   else if (!flow.interacted && !belongs(flow, host, now)) await finalize(flow, "unknown")
 }
 
+registerAutofill()
+registerVault()
+registerExternal()
+
 chrome.runtime.onMessage.addListener((message: Message, sender) => {
+  if (typeof message?.type !== "string" || !message.type.startsWith("foyer:")) return
   const tabId = sender.tab?.id
   if (tabId === undefined || sender.tab?.incognito) return
   const ctx: Context = { tabId, openerTabId: sender.tab?.openerTabId, topFrame: sender.frameId === 0 }
+  // Autofill continues email-first logins whether or not recording is paused.
+  if (message.type === "foyer:surface") void onSurfaceForAutofill(sender, message.surface).catch(() => {})
   serial(async () => {
-    if ((await getSettings()).paused) return
+    // Pausing stops dataset writes (see finalize/onSurface); flows are still
+    // tracked so save prompts and email-first autofill keep working.
     if (message.type === "foyer:surface") await onSurface(ctx, message.surface)
     else if (message.type === "foyer:action") await onAction(ctx, message.host, message.path, message.action)
     else if (message.type === "foyer:quiet" && ctx.topFrame) await onQuiet(ctx, message.host, message.loginish)

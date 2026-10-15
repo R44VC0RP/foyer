@@ -148,7 +148,16 @@ export interface Dataset {
 }
 
 export interface Settings {
+  /** Stop recording login structure. Autofill keeps working. */
   paused: boolean
+  /** Offer accounts from connected password managers on login fields. */
+  autofill: boolean
+  /** Offer to save new or changed logins and sign-in methods. */
+  savePrompts: boolean
+  /** Answer WebAuthn requests with passkeys kept in a password manager. */
+  passkeys: boolean
+  /** Press the form's submit button after filling. */
+  autosubmit: boolean
 }
 
 // Content/page -> background messages.

@@ -1,0 +1,144 @@
+:root {
+  color-scheme: light dark;
+  --bg: oklch(99.5% 0.002 120);
+  --fg: oklch(22% 0.01 120);
+  --muted: oklch(50% 0.01 120);
+  --line: oklch(91% 0.008 120);
+  --hover: oklch(96% 0.012 130);
+  --moss: #3e5a2c;
+  --bone: #eee7d6;
+  --warn: oklch(55% 0.15 60);
+  font: 13px/1.4 ui-sans-serif, system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: oklch(21% 0.006 120);
+    --fg: oklch(94% 0.005 120);
+    --muted: oklch(68% 0.008 120);
+    --line: oklch(30% 0.008 120);
+    --hover: oklch(27% 0.012 130);
+    --moss: #5d7f46;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+main {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+header {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+header img {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+}
+
+h1 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+p {
+  margin: 0;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.warn {
+  color: var(--warn);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.account {
+  all: unset;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.account:hover,
+.account:focus-visible {
+  background: var(--hover);
+}
+
+.picker {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  color: var(--muted);
+}
+
+select {
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 4px 8px;
+}
+
+footer {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+button {
+  font: inherit;
+  border-radius: 8px;
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  cursor: pointer;
+  transition: transform 120ms ease-out;
+}
+
+button:active {
+  transform: scale(0.97);
+}
+
+button.primary {
+  background: var(--moss);
+  border-color: var(--moss);
+  color: var(--bone);
+}
+
+button.ghost {
+  background: transparent;
+  color: var(--fg);
+}

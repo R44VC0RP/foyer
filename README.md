@@ -37,11 +37,41 @@ To update later: `git pull && bun run build`, then click reload on Foyer in
 - Click **Dataset** for everything: export to a `.foyer.json` file, import
   someone else's file (it merges), or delete sites.
 
+## Autofill with your own password manager
+
+Foyer can fill, save and sign in with **your** password manager. It never
+keeps passwords itself.
+
+- **Fill:** focus a login field and pick an account from Foyer's menu, use the
+  toolbar popup, or press ⌥⇧F. Email-first logins fill the password step
+  automatically, and one-time codes fill on the code screen.
+- **Save:** after you sign in, Foyer offers to save a new login or update a
+  changed password.
+- **Passkeys:** when a site asks for a passkey, Foyer can create one or sign in
+  with one kept in your password manager. "Use another device" falls back to
+  the browser.
+- **Sign-in methods:** after "Continue with Google", Foyer offers to remember
+  it, and next time the menu offers that button.
+
+It works with 1Password (`op` CLI), Bitwarden (`bw` CLI), or anything else you
+connect. Install the bridge once:
+
+```sh
+bun run bridge:install
+```
+
+Then reload Foyer and check **Dataset → Password managers**. To connect another
+password manager, see [docs/PROVIDERS.md](docs/PROVIDERS.md).
+
 ## Where data lives
 
 Everything stays in Chrome's local extension storage on your machine. Nothing is
 sent anywhere. Exports round dates to the month, and imported files are
 re-checked before they're merged. Incognito windows are never recorded.
+
+Credentials are separate from the dataset. They pass between your password
+manager and the page only when you pick an account or agree to save, live in
+memory only, and are never written to Foyer's storage or exports.
 
 ## Develop
 

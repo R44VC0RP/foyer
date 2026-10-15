@@ -5,7 +5,7 @@ import { join } from "node:path"
 const root = join(import.meta.dir, "..")
 const outdir = join(root, "dist")
 
-const entries = ["background", "content", "passkey-hook", "popup", "dashboard"].map((name) =>
+const entries = ["background", "content", "passkey-hook", "popup", "dashboard", "menu", "dialog"].map((name) =>
   join(root, "src", `${name}.ts`),
 )
 
@@ -18,7 +18,8 @@ async function build() {
     target: "browser",
     // Content scripts cannot be ES modules, so every entry is a self-contained IIFE.
     format: "iife",
-    minify: false,
+    // Keep identifiers readable for debugging; strip whitespace (content.js runs on every page).
+    minify: { whitespace: true, syntax: true, identifiers: false },
     sourcemap: "none",
   })
   if (!result.success) {

@@ -2,6 +2,11 @@
 // uses them (which field, which button, never what was typed) and reports the
 // structure to the background worker.
 
+import type { FillTarget } from "./autofill/fill"
+import { captureOnSubmit, primeCapture } from "./autofill/capture"
+import { initPasskeyChannel } from "./autofill/channel"
+import { initDialogs } from "./autofill/dialog-host"
+import { initAutofill, refreshAutofill } from "./autofill/inline"
 import { classifyInput, fieldSpec, LOGIN_URL, scanPage, type ControlRole } from "./detect"
 import { MEDIATIONS, USER_VERIFICATIONS } from "./shared/dataset"
 import { idpForHost, isDedicatedIdpHost } from "./shared/domains"
@@ -38,8 +43,15 @@ function action(a: Action) {
   send({ type: "foyer:action", ...where(), action: a })
 }
 
+// Live elements of the current login form, for autofill. Never sent anywhere.
+let fillTargets: FillTarget[] = []
+let submitControl: Element | undefined
+let providerButtons = new Map<string, Element>()
+
 function buildSurface(): Surface | null {
   const scan = scanPage()
+  fillTargets = []
+  submitControl = undefined
   fields = new WeakMap()
   controls = new WeakMap()
   for (const f of scan.fields) fields.set(f.el, f.spec)
@@ -56,6 +68,12 @@ function buildSurface(): Surface | null {
   if (!kind && (providers.length || passkeyAutofill) && scan.fields.length) kind = "login"
   if (!kind) return null
   if (kind === "login" && isDedicatedIdpHost(location.hostname)) kind = "idp"
+  if (kind === "login" || kind === "idp" || kind === "mfa") {
+    fillTargets = scan.fields.map((f) => ({ el: f.el, role: f.spec.role, split: f.spec.split }))
+    submitControl = scan.submit?.el
+    primeCapture()
+  }
+  providerButtons = new Map(scan.providers.map((p) => [p.spec.provider, p.el]))
 
   const unique = new Map<string, FieldSpec>()
   for (const f of scan.fields) unique.set(`${f.spec.role}:${f.spec.selector}`, f.spec)
@@ -94,6 +112,9 @@ function scan() {
     send({ type: "foyer:surface", surface })
   }
   if (!surface) lastSignature = ""
+  // Autofocused login fields get the menu once the form is recognised.
+  const active = document.activeElement
+  if (active instanceof HTMLInputElement && fillTargets.some((t) => t.el === active)) refreshAutofill(active)
 
   if (!isTop) return
   window.clearTimeout(quietTimer)
@@ -102,7 +123,7 @@ function scan() {
     quietTimer = window.setTimeout(() => {
       if (!currentSurface && location.href === url) {
         quietSentFor = url
-        send({ type: "foyer:quiet", ...where(), loginish: LOGIN_URL.test(location.hostname + location.pathname) })
+        send({ type: "foyer:quiet", ...where(), loginish: LOGIN_URL.test(location.pathname) })
       }
     }, QUIET_AFTER_MS)
   }
@@ -166,10 +187,13 @@ function submitted(via: "form" | "button" | "enter", selector?: string) {
   if (now - lastSubmitAt < 800) return
   lastSubmitAt = now
   action({ kind: "submit", via, selector })
+  if (fillTargets.length) captureOnSubmit(fillTargets)
 }
 
+// Only the user's own clicks and keypresses count: pages can dispatch synthetic
+// ones, which would pollute the dataset and could trigger a save capture.
 function onClick(event: MouseEvent) {
-  if (!currentSurface) return
+  if (!event.isTrusted || !currentSurface) return
   let node = event.target instanceof Element ? event.target : null
   for (let depth = 0; node && depth < 6; depth++, node = node.parentElement) {
     const role = controls.get(node)
@@ -192,7 +216,7 @@ function onSubmit(event: Event) {
 }
 
 function onKeydown(event: KeyboardEvent) {
-  if (event.key !== "Enter" || !currentSurface) return
+  if (!event.isTrusted || event.key !== "Enter" || !currentSurface) return
   if (event.target instanceof Element && fields.has(event.target)) submitted("enter")
 }
 
@@ -216,13 +240,11 @@ function onBlur() {
 
 // ---- WebAuthn / FedCM reports from the MAIN-world hook ------------------------
 
-function onCredentials(event: Event) {
-  let detail: any
-  try {
-    detail = JSON.parse(String((event as CustomEvent).detail))
-  } catch {
-    return
-  }
+// Reports arrive over the private MessagePort from passkey-hook.ts, so pages
+// can't inject fake ones the way they could with DOM events.
+function onCredentials(raw: unknown) {
+  const detail = raw as any
+  if (!detail || typeof detail !== "object") return
   if (detail?.kind === "passkey") {
     const conditional = detail.mediation === "conditional"
     if (detail.phase === "start") {
@@ -268,7 +290,9 @@ function onCredentials(event: Event) {
 const embeddedIdp = !isTop && isDedicatedIdpHost(location.hostname)
 
 if (!embeddedIdp) {
-  document.addEventListener("foyer:credentials", onCredentials)
+  initAutofill({ targets: () => fillTargets, submit: () => submitControl, providerButton: (p) => providerButtons.get(p) })
+  initDialogs()
+  initPasskeyChannel(onCredentials)
   document.addEventListener("input", onInput, true)
   document.addEventListener("change", onInput, true)
   document.addEventListener("click", onClick, true)

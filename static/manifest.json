@@ -3,6 +3,7 @@
   "name": "Foyer",
   "short_name": "Foyer",
   "version": "0.1.0",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAq/a2VmK/N6tDONdWCRa68UfitgLI77stnWm+3LaMyBHvaH6QUQfhbS4nqG/Rn8Ag1urhpRxUrCb4eUKZhz9lOT9qsn99uCwTTFxbKYlqTdvbmKv5JKUzTApdRKD1T/snz2wP0aQjyE6LQewSP7Wt4xyLoEIuYuSNsJIvG+cwDKmLNA9b5cMk411bZkttofCfh7h/jLV4QeN2AFWJFdeMS50V3zUMJh7WkT4ircidjRnA6KNQgmC283as18NWEa8GBbEZid3YkPzvikkPD6OF7OtevI1u+otzY/A0ytiRCjg0NrHDLq1blUHGuRREHyzwAVs9NUr8ylRCck11YLkeJwIDAQAB",
   "description": "Learns how each site logs you in (password, passkey, Google and friends) without keeping anything personal.",
   "minimum_chrome_version": "120",
   "icons": {
@@ -11,21 +12,37 @@
     "48": "icons/icon-48.png",
     "128": "icons/icon-128.png"
   },
-  "permissions": ["storage", "webNavigation", "alarms", "activeTab"],
+  "permissions": [
+    "storage",
+    "webNavigation",
+    "alarms",
+    "activeTab",
+    "nativeMessaging"
+  ],
   "background": {
     "service_worker": "background.js"
   },
   "content_scripts": [
     {
-      "matches": ["http://*/*", "https://*/*"],
-      "js": ["passkey-hook.js"],
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "passkey-hook.js"
+      ],
       "run_at": "document_start",
       "all_frames": true,
       "world": "MAIN"
     },
     {
-      "matches": ["http://*/*", "https://*/*"],
-      "js": ["content.js"],
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "content.js"
+      ],
       "run_at": "document_start",
       "all_frames": true
     }
@@ -43,5 +60,31 @@
     "page": "dashboard.html",
     "open_in_tab": true
   },
-  "incognito": "not_allowed"
+  "incognito": "not_allowed",
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "menu.html",
+        "menu.css",
+        "menu.js",
+        "dialog.html",
+        "dialog.css",
+        "dialog.js",
+        "icons/icon-48.png"
+      ],
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "use_dynamic_url": true
+    }
+  ],
+  "commands": {
+    "fill-login": {
+      "suggested_key": {
+        "default": "Alt+Shift+F"
+      },
+      "description": "Fill a login on this page"
+    }
+  }
 }

@@ -1,0 +1,98 @@
+:root {
+  color-scheme: light dark;
+  --bg: oklch(99.5% 0.002 120);
+  --fg: oklch(22% 0.01 120);
+  --muted: oklch(52% 0.01 120);
+  --hover: oklch(95% 0.012 130);
+  --moss: #3e5a2c;
+  --bone: #eee7d6;
+  font: 13px/1.35 ui-sans-serif, system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: oklch(21% 0.006 120);
+    --fg: oklch(94% 0.005 120);
+    --muted: oklch(68% 0.008 120);
+    --hover: oklch(28% 0.012 130);
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+#list {
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 4px;
+}
+
+.row {
+  all: unset;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  height: 48px;
+  padding: 0 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+
+.row.active {
+  background: var(--hover);
+}
+
+.badge {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  display: grid;
+  place-items: center;
+  background: var(--moss);
+  color: var(--bone);
+  font-weight: 600;
+}
+
+.text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.title,
+.sub {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.title {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.sub {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.note {
+  padding: 8px 14px 10px;
+  color: var(--muted);
+  font-size: 11.5px;
+  border-top: 1px solid color-mix(in oklch, var(--fg) 8%, transparent);
+}
