@@ -8,10 +8,10 @@ import { dirname, isAbsolute, join } from "node:path"
 import { expandHome, findBinary, log } from "./util"
 
 export type ProviderConfig =
-  | { type: "1password"; id?: string; account?: string; path?: string }
-  | { type: "bitwarden"; id?: string; path?: string; sessionFile?: string }
+  | { type: "1password"; id?: string; account?: string; path?: string; vault?: string }
+  | { type: "bitwarden"; id?: string; path?: string; sessionFile?: string; userVerified?: boolean }
   | { type: "command"; id: string; name: string; command: string[] }
-  | { type: "demo"; id?: string; file: string }
+  | { type: "demo"; id?: string; file: string; userVerified?: boolean }
 
 export interface BridgeConfig {
   providers: ProviderConfig[]
@@ -33,11 +33,23 @@ function parseProvider(raw: unknown, baseDir: string): ProviderConfig | string {
   const p = raw as Record<string, unknown>
   switch (p.type) {
     case "1password":
-      if (!optStr(p.id) || !optStr(p.account) || !optStr(p.path)) return "1password: id/account/path must be strings"
-      return { type: "1password", id: p.id as string | undefined, account: p.account as string | undefined, path: p.path as string | undefined }
+      if (!optStr(p.id) || !optStr(p.account) || !optStr(p.path) || !optStr(p.vault)) return "1password: id/account/path/vault must be strings"
+      return {
+        type: "1password",
+        id: p.id as string | undefined,
+        account: p.account as string | undefined,
+        path: p.path as string | undefined,
+        vault: p.vault as string | undefined,
+      }
     case "bitwarden":
       if (!optStr(p.id) || !optStr(p.path) || !optStr(p.sessionFile)) return "bitwarden: id/path/sessionFile must be strings"
-      return { type: "bitwarden", id: p.id as string | undefined, path: p.path as string | undefined, sessionFile: p.sessionFile as string | undefined }
+      return {
+        type: "bitwarden",
+        id: p.id as string | undefined,
+        path: p.path as string | undefined,
+        sessionFile: p.sessionFile as string | undefined,
+        userVerified: p.userVerified === true,
+      }
     case "command":
       if (!str(p.id) || !str(p.name)) return "command: id and name are required"
       if (!Array.isArray(p.command) || p.command.length === 0 || !p.command.every(str)) return `command ${p.id}: command must be a non-empty string array`
@@ -45,7 +57,7 @@ function parseProvider(raw: unknown, baseDir: string): ProviderConfig | string {
     case "demo": {
       if (!str(p.file) || !optStr(p.id)) return "demo: file is required"
       const file = expandHome(p.file)
-      return { type: "demo", id: p.id as string | undefined, file: isAbsolute(file) ? file : join(baseDir, file) }
+      return { type: "demo", id: p.id as string | undefined, file: isAbsolute(file) ? file : join(baseDir, file), userVerified: p.userVerified === true }
     }
     default:
       return `unknown provider type ${JSON.stringify(p.type)}`

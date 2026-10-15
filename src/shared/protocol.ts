@@ -125,6 +125,8 @@ export type RequestV2 =
       /** COSE algorithms the site accepts, in preference order. */
       algorithms: number[]
       excludeCredentialIds: string[]
+      /** The site's authenticatorSelection.userVerification; "required" is refused by providers that can't verify the user. */
+      userVerification?: string
     }
   | {
       id: string
@@ -136,6 +138,28 @@ export type RequestV2 =
       clientDataHash: string
       userVerification?: string
     }
+
+/**
+ * Command providers only: storage calls the bridge makes while it does the
+ * passkey cryptography itself. Records hold the private key (PKCS#8, base64url).
+ */
+export interface PasskeyRecord {
+  rpId: string
+  credentialId: string
+  userHandle: string
+  userName: string
+  displayName: string
+  privateKey: string
+  createdAt: string
+}
+
+export type CommandStorageRequest =
+  | { id: string; type: "store-passkey"; record: PasskeyRecord }
+  | { id: string; type: "load-passkey"; ref: string }
+
+export type CommandStorageResponse =
+  | { id: string; type: "store-passkey"; ref: string; userVerified?: boolean }
+  | { id: string; type: "load-passkey"; record: PasskeyRecord; userVerified?: boolean }
 
 export interface CheckResponse {
   id: string
