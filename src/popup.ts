@@ -1,98 +1,134 @@
+// Toolbar popup: this site's accounts first, then how the site signs you in.
+
 import type { TabAccountsReply } from "./autofill/messages"
 import { registrableDomain } from "./shared/domains"
-import { deleteSite, getSettings, getSite, setSettings } from "./shared/store"
-import { flowView, h, offersView } from "./ui"
+import type { AccountV2 } from "./shared/protocol"
+import { getSettings, getSite, setSettings } from "./shared/store"
+import { describeFlow, h, icon, mainFlow, methodIcon, offerLabel, otherOffers, providerName, svg, ICONS, trailSteps, trailView } from "./ui"
 
 const root = document.getElementById("app")!
 
-async function accountsSection(tabId: number): Promise<HTMLElement[]> {
+function badgeFor(a: AccountV2): HTMLElement {
+  if (a.kind === "passkey") return h("span", { class: "badge soft" }, icon("key"))
+  if (a.kind === "sso") return h("span", { class: "badge plain" }, a.sso === "google" ? icon("google") : a.sso === "apple" ? icon("apple") : providerName(a.sso ?? "").slice(0, 1))
+  return h("span", { class: "badge" }, (a.title || a.username || "?").trim().slice(0, 1).toUpperCase())
+}
+
+function accountRow(a: AccountV2, tabId: number, primary: boolean): HTMLElement {
+  const kind = a.kind ?? "password"
+  const title = kind === "sso" ? `Sign in with ${providerName(a.sso ?? "")}` : kind === "passkey" ? "Passkey" : a.title
+  const detail =
+    kind === "passkey"
+      ? `${a.username ?? a.title} · used when the site asks`
+      : kind === "sso"
+        ? "Saved sign-in method"
+        : [a.username, a.hasTotp ? "2FA code" : ""].filter(Boolean).join(" · ")
+  const row = h(
+    "div",
+    { class: `account${primary ? " selected" : ""}` },
+    badgeFor(a),
+    h("div", { class: "account-text" }, h("div", { class: "account-title ellipsis" }, title), h("div", { class: "account-sub ellipsis" }, detail)),
+  )
+  if (kind !== "passkey") {
+    const button = h("button", { class: `btn${primary ? " primary" : ""}` }, kind === "sso" ? "Use" : "Fill")
+    button.onclick = async () => {
+      await chrome.runtime.sendMessage({ type: "af:tab-fill", tabId, provider: a.provider, ref: a.ref })
+      window.close()
+    }
+    row.append(button)
+  }
+  return row
+}
+
+async function accountsSection(tabId: number): Promise<{ section: HTMLElement; status: string }> {
   const reply = (await chrome.runtime.sendMessage({ type: "af:tab-accounts", tabId }).catch(() => null)) as TabAccountsReply | null
-  if (!reply?.connected)
-    return [
-      h("h2", {}, "Accounts"),
-      h("p", { class: "muted" }, "No password manager connected. Open Dataset → Password managers to set one up."),
-    ]
-  if (!reply.accounts.length)
-    return [
-      h("h2", {}, "Accounts"),
-      h("p", { class: "muted" }, reply.errors.length ? reply.errors.map((e) => `${e.provider}: ${e.message}`).join(" · ") : "No saved logins for this site."),
-    ]
-  return [
-    h("h2", {}, "Accounts"),
-    h(
-      "div",
-      { class: "accounts" },
-      ...reply.accounts.map((a) => {
-        const kind = a.kind ?? "password"
-        if (kind === "passkey")
-          return h(
-            "div",
-            { class: "account" },
-            h("div", { class: "account-text" }, h("strong", {}, a.username || a.title), h("span", { class: "muted" }, `Passkey · ${a.provider}`)),
-            h("span", { class: "muted" }, "Used when the site asks"),
-          )
-        const fill = h("button", { class: "small" }, kind === "sso" ? "Use" : "Fill")
-        fill.onclick = async () => {
-          await chrome.runtime.sendMessage({ type: "af:tab-fill", tabId, provider: a.provider, ref: a.ref })
-          window.close()
-        }
-        return h(
-          "div",
-          { class: "account" },
-          h(
-            "div",
-            { class: "account-text" },
-            h("strong", {}, kind === "sso" ? `Sign in with ${a.sso}` : a.title),
-            h("span", { class: "muted" }, [a.username, a.provider].filter(Boolean).join(" · ")),
-          ),
-          fill,
-        )
-      }),
+  const head = (right?: string) => h("div", { class: "section-head" }, h("div", { class: "label" }, "Accounts"), right ? h("div", { class: "muted small" }, right) : null)
+  if (!reply?.connected) {
+    const setup = h("button", { class: "link" }, "Connect a password manager →")
+    setup.onclick = () => openDashboard("managers")
+    return {
+      status: "No password manager connected",
+      section: h("section", { class: "section" }, head(), h("div", { class: "card empty" }, h("p", {}, "Foyer fills and saves logins with your own password manager."), setup)),
+    }
+  }
+  const ready = reply.providers.filter((p) => p.status === "ready").map((p) => p.name)
+  const status = ready.length ? `${ready.join(", ")} connected` : "Password manager locked"
+  if (!reply.accounts.length) {
+    const msg = reply.errors.length ? reply.errors.map((e) => e.message).join(" · ") : "No saved logins for this site yet. Sign in and Foyer will offer to save it."
+    return { status, section: h("section", { class: "section" }, head(), h("div", { class: "card empty" }, h("p", {}, msg))) }
+  }
+  const firstFillable = reply.accounts.findIndex((a) => (a.kind ?? "password") !== "passkey")
+  return {
+    status,
+    section: h(
+      "section",
+      { class: "section" },
+      head("⌥⇧F fills the first"),
+      h("div", { class: "card list" }, ...reply.accounts.map((a, i) => accountRow(a, tabId, i === firstFillable))),
     ),
-  ]
+  }
+}
+
+function openDashboard(page = "") {
+  void chrome.tabs.create({ url: chrome.runtime.getURL(`dashboard.html${page ? `#${page}` : ""}`) })
+  window.close()
 }
 
 async function render() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
   const url = tab?.url && /^https?:/.test(tab.url) ? new URL(tab.url) : undefined
   const domain = url ? registrableDomain(url.hostname) : undefined
-  const site = domain ? await getSite(domain) : undefined
   const settings = await getSettings()
 
-  const toggle = h("button", { class: "ghost" }, settings.paused ? "Resume" : "Pause")
-  toggle.title = "Pause or resume recording login structure"
-  toggle.onclick = async () => {
-    await setSettings({ paused: !settings.paused })
-    render()
-  }
-  const open = h("button", {}, "Dataset")
-  open.onclick = () => chrome.runtime.openOptionsPage()
+  const settingsButton = h("button", { class: "icon-button", title: "Open Foyer", "aria-label": "Open Foyer" }, icon("gear"))
+  settingsButton.onclick = () => openDashboard()
 
-  const body: HTMLElement[] = []
-  if (domain && tab?.id !== undefined && settings.autofill) body.push(...(await accountsSection(tab.id)))
-  if (!domain) body.push(h("p", { class: "muted" }, "Open a website to see what Foyer knows about its login."))
-  else if (!site) body.push(h("p", { class: "muted" }, "No login seen here yet. Visit the sign-in page and log in as usual."))
-  else {
-    body.push(h("h2", {}, "Offers"), offersView(site))
-    body.push(h("h2", {}, `Logins seen (${site.flows.length})`))
-    if (site.flows.length) body.push(...site.flows.slice(0, 4).map(flowView))
-    else body.push(h("p", { class: "muted" }, "Log in once and the steps you take will show up here."))
-    const forget = h("button", { class: "ghost danger" }, "Forget this site")
-    forget.onclick = async () => {
-      await deleteSite(site.domain)
-      render()
+  const sections: HTMLElement[] = []
+  let status = "Open a website to see its sign-in"
+  if (domain && tab?.id !== undefined) {
+    if (settings.autofill) {
+      const accounts = await accountsSection(tab.id)
+      status = accounts.status
+      sections.push(accounts.section)
     }
-    body.push(h("div", { class: "row end" }, forget))
+    const site = await getSite(domain)
+    const flow = site && mainFlow(site)
+    if (flow) {
+      const steps = trailSteps(flow)
+      if (steps.length)
+        sections.push(h("section", { class: "section" }, h("div", { class: "label" }, "How you sign in here"), trailView(steps), h("p", { class: "muted small" }, describeFlow(flow))))
+    }
+    const offers = site ? otherOffers(site, flow) : []
+    if (offers.length)
+      sections.push(
+        h("section", { class: "section" }, h("div", { class: "label" }, "Also offers"), h("div", { class: "chips" }, ...offers.map((m) => h("span", { class: "chip" }, methodIcon(m), offerLabel(m))))),
+      )
+    if (!site && !settings.autofill)
+      sections.push(h("section", { class: "section" }, h("p", { class: "muted" }, "Nothing learned here yet. Sign in as usual and Foyer remembers how.")))
+  } else {
+    sections.push(h("section", { class: "section" }, h("p", { class: "muted" }, "Open a website's sign-in page to see your accounts and how it signs you in.")))
   }
+
+  const learning = h("input", { type: "checkbox", class: "switch", id: "learning" })
+  learning.checked = !settings.paused
+  learning.onchange = () => setSettings({ paused: !learning.checked })
+  const open = h("button", { class: "link" }, "Open Foyer →")
+  open.onclick = () => openDashboard()
 
   root.replaceChildren(
     h(
       "header",
-      {},
-      h("div", {}, h("h1", {}, "Foyer"), h("div", { class: "muted" }, domain ?? "")),
-      h("div", { class: "row" }, h("span", { class: `dot ${settings.paused ? "off" : "on"}` }), toggle, open),
+      { class: "popup-header" },
+      h(
+        "div",
+        { class: "site" },
+        h("span", { class: "site-icon" }, svg(ICONS.foyer)),
+        h("div", { class: "site-text" }, h("div", { class: "site-domain mono ellipsis" }, domain ?? "Foyer"), h("div", { class: "muted small ellipsis" }, status)),
+      ),
+      settingsButton,
     ),
-    ...body,
+    ...sections,
+    h("footer", { class: "popup-footer" }, h("label", { class: "toggle", for: "learning" }, learning, "Learning how sites sign in"), open),
   )
 }
 

@@ -52,6 +52,8 @@ export interface MenuLoadReply {
   /** Offer a generated password instead of accounts (new-password fields). */
   generate?: boolean
   domain: string
+  /** Display names of the providers, by id ("1password" → "1Password"). */
+  providerNames?: Record<string, string>
   accounts: Account[]
   errors: Array<{ provider: string; message: string }>
 }

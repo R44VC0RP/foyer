@@ -248,9 +248,10 @@ async function handle(message: AutofillMessage, sender: chrome.runtime.MessageSe
     case "af:menu-load": {
       const t = tokenFrom(message.token, sender)
       if (!t) return null
-      if (t.focused === "new-password") return { generate: true, domain: t.domain, accounts: [], errors: [] } satisfies MenuLoadReply
+      const providerNames = Object.fromEntries(((await providersHello().catch(() => null))?.providers ?? []).map((p) => [p.id, p.name]))
+      if (t.focused === "new-password") return { generate: true, domain: t.domain, accounts: [], errors: [], providerNames } satisfies MenuLoadReply
       const reply = await menuAccounts(t)
-      return { domain: t.domain, accounts: reply.accounts, errors: reply.errors ?? [] } satisfies MenuLoadReply
+      return { domain: t.domain, accounts: reply.accounts, errors: reply.errors ?? [], providerNames } satisfies MenuLoadReply
     }
     case "af:menu-pick": {
       const t = tokenFrom(message.token, sender)

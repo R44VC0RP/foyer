@@ -1,144 +1,169 @@
-:root {
-  color-scheme: light dark;
-  --bg: oklch(99.5% 0.002 120);
-  --fg: oklch(22% 0.01 120);
-  --muted: oklch(50% 0.01 120);
-  --line: oklch(91% 0.008 120);
-  --hover: oklch(96% 0.012 130);
-  --moss: #3e5a2c;
-  --bone: #eee7d6;
-  --warn: oklch(55% 0.15 60);
-  font: 13px/1.4 ui-sans-serif, system-ui, -apple-system, sans-serif;
-  -webkit-font-smoothing: antialiased;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: oklch(21% 0.006 120);
-    --fg: oklch(94% 0.005 120);
-    --muted: oklch(68% 0.008 120);
-    --line: oklch(30% 0.008 120);
-    --hover: oklch(27% 0.012 130);
-    --moss: #5d7f46;
-  }
-}
-
-* {
-  box-sizing: border-box;
-}
+/* Foyer dialogs (iframe): passkeys and save prompts. */
 
 html,
 body {
-  margin: 0;
-  background: var(--bg);
-  color: var(--fg);
-  border-radius: 14px;
+  background: var(--paper);
+  border-radius: 16px;
   overflow: hidden;
 }
 
 main {
-  padding: 16px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
+  padding: 18px;
 }
 
 header {
   display: flex;
+  align-items: flex-start;
   gap: 12px;
-  align-items: center;
 }
 
-header img {
+header > svg {
   width: 32px;
   height: 32px;
   flex-shrink: 0;
 }
 
+.head-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
 h1 {
   margin: 0;
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 600;
   letter-spacing: -0.01em;
 }
 
 p {
   margin: 0;
+  line-height: 20px;
 }
 
-.muted {
-  color: var(--muted);
+.close {
+  font-size: 18px;
+  line-height: 16px;
+}
+
+.strong {
+  font-weight: 500;
 }
 
 .warn {
-  color: var(--warn);
+  color: var(--rust);
 }
 
-.list {
+.box {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  background: var(--bone);
+}
+
+.line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 9px 12px;
+  font-size: 12px;
+}
+
+.box > .line + .line {
+  border-top: 1px solid var(--hairline);
+}
+
+.box.line {
+  flex-direction: row;
+}
+
+.dots {
+  letter-spacing: 0.12em;
+}
+
+select {
+  font: 500 12px var(--sans);
+  color: var(--ink);
+  background: transparent;
+  border: 0;
+  text-align: right;
+  cursor: pointer;
+}
+
+.accounts {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .account {
   all: unset;
+  box-sizing: border-box;
   display: flex;
-  justify-content: space-between;
-  gap: 10px;
+  align-items: center;
+  gap: 12px;
   padding: 10px 12px;
-  border: 1px solid var(--line);
   border-radius: 10px;
+  border: 1px solid var(--hairline);
   cursor: pointer;
 }
 
+.account .badge {
+  width: 30px;
+  height: 30px;
+}
+
+.account-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+}
+
+.account-text .strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.go {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--moss-text);
+  visibility: hidden;
+}
+
+.account.active,
 .account:hover,
 .account:focus-visible {
-  background: var(--hover);
+  border-color: var(--moss);
+  background: var(--moss-soft);
 }
 
-.picker {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  color: var(--muted);
-}
-
-select {
-  font: inherit;
-  color: inherit;
-  background: transparent;
-  border: 1px solid var(--line);
-  border-radius: 7px;
-  padding: 4px 8px;
+.account.active .go,
+.account:hover .go,
+.account:focus-visible .go {
+  visibility: visible;
 }
 
 footer {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
   flex-wrap: wrap;
+}
+
+.buttons {
+  display: flex;
   gap: 6px;
-}
-
-button {
-  font: inherit;
-  border-radius: 8px;
-  padding: 6px 12px;
-  border: 1px solid var(--line);
-  cursor: pointer;
-  transition: transform 120ms ease-out;
-}
-
-button:active {
-  transform: scale(0.97);
-}
-
-button.primary {
-  background: var(--moss);
-  border-color: var(--moss);
-  color: var(--bone);
-}
-
-button.ghost {
-  background: transparent;
-  color: var(--fg);
+  margin-left: auto;
 }

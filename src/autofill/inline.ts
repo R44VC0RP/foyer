@@ -17,8 +17,8 @@ export interface PageState {
   providerButton(provider: string): Element | undefined
 }
 
-const MENU_ROW = 52
-const MENU_WIDTH = 320
+const MENU_ROW = 48
+const MENU_WIDTH = 300
 const FILLABLE: FieldRole[] = ["username", "email", "phone", "password", "new-password", "otp"]
 
 let state: PageState
@@ -67,14 +67,14 @@ function openMenu(el: HTMLInputElement, t: string, count: number) {
   closeMenu()
   anchor = el
   token = t
-  menuHeight = Math.min(count, 5) * MENU_ROW + 44
+  menuHeight = Math.min(count, 5) * MENU_ROW + 42
   host = document.createElement("foyer-menu")
   const root = host.attachShadow({ mode: "closed" })
   frame = document.createElement("iframe")
   frame.src = chrome.runtime.getURL(`menu.html#${t}`)
   frame.setAttribute("allow", "")
   frame.style.cssText =
-    "all:initial;width:100%;height:100%;border:0;border-radius:12px;box-shadow:0 8px 28px rgb(0 0 0 / 18%),0 0 0 1px rgb(0 0 0 / 8%);background:transparent;color-scheme:normal;"
+    "all:initial;width:100%;height:100%;border:0;border-radius:14px;box-shadow:0 12px 32px rgb(30 33 25 / 16%),0 2px 6px rgb(30 33 25 / 8%),0 0 0 1px rgb(30 33 25 / 10%);background:transparent;color-scheme:normal;"
   root.append(frame)
   document.documentElement.append(host)
   position()

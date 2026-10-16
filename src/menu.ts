@@ -3,14 +3,13 @@
 
 import type { MenuLoadReply } from "./autofill/messages"
 import type { AccountV2 as Account } from "./shared/protocol"
-
-const SSO_NAMES: Record<string, string> = { sso: "single sign-on", x: "X", github: "GitHub", gitlab: "GitLab", linkedin: "LinkedIn" }
-const ssoName = (p: string) => SSO_NAMES[p] ?? (p ? p[0].toUpperCase() + p.slice(1) : "provider")
+import { h, icon, ICONS, providerName, svg } from "./ui"
 
 const token = location.hash.slice(1)
 const list = document.getElementById("list")!
-const note = document.getElementById("note")!
+const foot = document.getElementById("foot")!
 let accounts: Account[] = []
+let names: Record<string, string> = {}
 let active = 0
 let visible = false
 let generate = false
@@ -25,50 +24,55 @@ try {
   const observer = new IntersectionObserver(
     (entries) => {
       const e = entries[entries.length - 1] as IntersectionObserverEntry & { isVisible?: boolean }
-      visible = e.isVisible ?? e.isIntersecting
+      // Unobscured (v2 visibility) and essentially all on screen; sub-pixel
+      // heights mean a strict 100% can be unreachable.
+      visible = (e.isVisible ?? e.isIntersecting) && e.intersectionRatio >= 0.9
     },
-    { threshold: [1], trackVisibility: true, delay: 100 } as IntersectionObserverInit,
+    { threshold: [0, 0.5, 0.9, 1], trackVisibility: true, delay: 100 } as IntersectionObserverInit,
   )
   observer.observe(document.body)
 } catch {
   visible = true
 }
 
-function initials(account: Account) {
-  const source = account.kind === "sso" ? ssoName(account.sso ?? "") : account.title || account.username || "?"
-  return source.trim().slice(0, 1).toUpperCase()
+function badge(a: Account): HTMLElement {
+  if (a.kind === "passkey") return h("span", { class: "badge soft" }, icon("key"))
+  if (a.kind === "sso") {
+    const p = a.sso ?? ""
+    return h("span", { class: "badge plain" }, p === "google" ? icon("google") : p === "apple" ? icon("apple") : providerName(p).slice(0, 1))
+  }
+  return h("span", { class: "badge" }, (a.title || a.username || "?").trim().slice(0, 1).toUpperCase())
+}
+
+function row(b: HTMLElement, title: string, sub: string, i: number, onPick: () => void): HTMLElement {
+  const r = h(
+    "button",
+    { class: `row${i === active ? " active" : ""}`, type: "button", role: "option" },
+    b,
+    h("span", { class: "text" }, h("span", { class: "title" }, title), h("span", { class: "sub" }, sub)),
+    h("span", { class: "enter", "aria-hidden": "true" }, "↵"),
+  )
+  r.addEventListener("click", (e) => e.isTrusted && onPick())
+  r.addEventListener("mouseenter", () => {
+    active = i
+    highlight()
+  })
+  return r
 }
 
 function render() {
   list.replaceChildren(
     ...accounts.map((a, i) => {
-      const row = document.createElement("button")
-      row.className = `row${i === active ? " active" : ""}`
-      row.type = "button"
-      const badge = document.createElement("span")
-      badge.className = "badge"
-      badge.textContent = initials(a)
-      const text = document.createElement("span")
-      text.className = "text"
-      const title = document.createElement("span")
-      title.className = "title"
       const kind = a.kind ?? "password"
-      title.textContent = kind === "sso" ? `Sign in with ${ssoName(a.sso ?? "")}` : kind === "passkey" ? a.username || a.title : a.title
-      const sub = document.createElement("span")
-      sub.className = "sub"
-      sub.textContent = [kind === "passkey" ? "Passkey" : kind === "sso" ? a.title : a.username, a.provider].filter(Boolean).join(" · ")
-      text.append(title, sub)
-      row.append(badge, text)
-      row.addEventListener("click", (e) => {
-        if (e.isTrusted) pick(i)
-      })
-      row.addEventListener("mouseenter", () => {
-        active = i
-        highlight()
-      })
-      return row
+      const title = kind === "sso" ? `Sign in with ${providerName(a.sso ?? "")}` : kind === "passkey" ? a.username || a.title : a.title
+      const sub = kind === "passkey" ? "Passkey" : kind === "sso" ? "Saved sign-in method" : a.username ?? ""
+      return row(badge(a), title, sub, i, () => pick(i))
     }),
   )
+}
+
+function renderGenerate() {
+  list.replaceChildren(row(h("span", { class: "badge" }, "✱"), "Use a strong password", "20 characters · saved after you sign up", 0, () => pick(0)))
 }
 
 function highlight() {
@@ -76,46 +80,28 @@ function highlight() {
   ;(list.children[active] as HTMLElement | undefined)?.scrollIntoView({ block: "nearest" })
 }
 
-function renderGenerate() {
-  const row = document.createElement("button")
-  row.className = "row active"
-  row.type = "button"
-  const badge = document.createElement("span")
-  badge.className = "badge"
-  badge.textContent = "✱"
-  const text = document.createElement("span")
-  text.className = "text"
-  const title = document.createElement("span")
-  title.className = "title"
-  title.textContent = "Use a strong password"
-  const sub = document.createElement("span")
-  sub.className = "sub"
-  sub.textContent = "20 characters · Foyer offers to save it after you sign up"
-  text.append(title, sub)
-  row.append(badge, text)
-  row.addEventListener("click", (e) => {
-    if (e.isTrusted) pick(0)
-  })
-  list.replaceChildren(row)
+function footer(domain: string, right: string) {
+  foot.replaceChildren(h("span", { class: "foot-site" }, svg(ICONS.foyer), h("span", { class: "mono" }, domain)), h("span", {}, right))
 }
 
 async function pick(i: number) {
   if (!visible) return
   if (generate) {
-    note.textContent = "Filling…"
+    footer("", "Filling…")
     const reply = await send<{ ok: boolean }>({ type: "af:menu-generate", token })
-    if (!reply?.ok) note.textContent = "Couldn't fill. Try again."
+    if (!reply?.ok) footer("", "Couldn't fill. Try again.")
     return
   }
   const a = accounts[i]
   if (!a) return
-  note.textContent = "Filling…"
+  footer("", "Filling…")
   const reply = await send<{ ok: boolean }>({ type: "af:menu-pick", token, provider: a.provider, ref: a.ref })
-  if (!reply?.ok) note.textContent = "Couldn't fill. Try again from the toolbar."
+  if (!reply?.ok) footer("", "Couldn't fill. Try again from the toolbar.")
 }
 
 document.addEventListener("keydown", (e) => {
-  if (e.key === "ArrowDown") active = Math.min(active + 1, accounts.length - 1)
+  const count = generate ? 1 : accounts.length
+  if (e.key === "ArrowDown") active = Math.min(active + 1, count - 1)
   else if (e.key === "ArrowUp") active = Math.max(active - 1, 0)
   else if (e.key === "Enter") return void pick(active)
   else if (e.key === "Escape") return void send({ type: "af:menu-dismiss", token })
@@ -127,19 +113,19 @@ document.addEventListener("keydown", (e) => {
 async function load() {
   const reply = await send<MenuLoadReply>({ type: "af:menu-load", token })
   if (!reply) {
-    note.textContent = "Session expired."
+    footer("", "This menu has expired.")
     return
   }
   accounts = reply.accounts
+  names = reply.providerNames ?? {}
   generate = !!reply.generate
-  if (generate) {
-    note.textContent = `Foyer · ${reply.domain}`
-    renderGenerate()
-  } else {
-    note.textContent = accounts.length ? `Foyer · ${reply.domain}` : `No logins for ${reply.domain}`
-    render()
-  }
-  await send({ type: "af:menu-resize", token, height: document.documentElement.scrollHeight })
+  const sources = [...new Set(accounts.map((a) => names[a.provider] ?? a.provider))]
+  if (generate) renderGenerate()
+  else render()
+  footer(reply.domain, generate ? "Foyer" : accounts.length ? `from ${sources.join(", ")}` : "No logins saved here")
+  // Keep the frame exactly as tall as the content (fonts load late and change
+  // heights): the click guard above only trusts a fully visible menu.
+  new ResizeObserver(() => void send({ type: "af:menu-resize", token, height: Math.ceil(document.body.getBoundingClientRect().height) })).observe(document.body)
 }
 
 void load()

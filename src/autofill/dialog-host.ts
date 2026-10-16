@@ -11,7 +11,7 @@ export type DialogMessage =
 const open = new Map<string, { host: HTMLElement; frame: HTMLIFrameElement; placement: DialogPlacement }>()
 
 function place(entry: { host: HTMLElement; placement: DialogPlacement }, height: number) {
-  const width = 380
+  const width = 360
   const base = `position:fixed;z-index:2147483647;width:${width}px;height:${height}px;margin:0;padding:0;border:0;display:block;`
   entry.host.style.cssText =
     entry.placement === "center"
@@ -26,7 +26,7 @@ function openDialog(token: string, placement: DialogPlacement) {
   const frame = document.createElement("iframe")
   frame.src = chrome.runtime.getURL(`dialog.html#${token}`)
   frame.style.cssText =
-    "all:initial;width:100%;height:100%;border:0;border-radius:14px;box-shadow:0 18px 50px rgb(0 0 0 / 22%),0 0 0 1px rgb(0 0 0 / 8%);background:transparent;color-scheme:normal;"
+    "all:initial;width:100%;height:100%;border:0;border-radius:16px;box-shadow:0 24px 60px rgb(30 33 25 / 20%),0 2px 6px rgb(30 33 25 / 8%),0 0 0 1px rgb(30 33 25 / 10%);background:transparent;color-scheme:normal;"
   root.append(frame)
   const entry = { host, frame, placement }
   place(entry, 200)
