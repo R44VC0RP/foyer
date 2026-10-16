@@ -1,8 +1,8 @@
 {
   "name": "foyer",
   "private": true,
-  "version": "0.1.0",
-  "description": "Chrome extension that learns how sites log you in, without keeping anything personal.",
+  "version": "0.2.0",
+  "description": "Chrome extension that connects any password manager (fill, save, passkeys, Sign in with Google) and learns how every site signs you in.",
   "type": "module",
   "scripts": {
     "build": "bun scripts/build.ts",

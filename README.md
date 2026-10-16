@@ -2,13 +2,14 @@
 
 # Foyer
 
-A Chrome extension that learns how each site logs you in (password, email first,
-passkey, "Continue with Google", magic link, one-time code) and builds a dataset
-of those login recipes you can export and share.
+Connect any password manager to Chrome. Foyer fills and saves logins, creates
+and uses passkeys, remembers "Sign in with Google", and learns how every site
+signs you in (password, email first, passkey, magic link, one-time code) as a
+dataset of login recipes you can export and share.
 
-It never stores anything personal: no values you type, page text, query strings
-or account names. Only the shape of the login: which fields, which buttons, and
-in what order.
+Foyer keeps no passwords itself; your password manager does. The recipes it
+learns are structure only: no values you type, page text, query strings or
+account names. Just which fields, which buttons, and in what order.
 
 ## Install
 
@@ -33,9 +34,10 @@ To update later: `git pull && bun run build`, then click reload on Foyer in
 ## Use
 
 - Log in to sites as usual. Foyer watches quietly in the background.
-- Click the toolbar icon to see what it learned about the current site, or to pause it.
-- Click **Dataset** for everything: export to a `.foyer.json` file, import
-  someone else's file (it merges), or delete sites.
+- Click the toolbar icon for this site's accounts and how it signs you in.
+- **Open Foyer** for everything else: **Logins** (what Foyer learned, with
+  export and import), **Password managers** (connections and settings) and
+  **Privacy & data**.
 
 ## Autofill with your own password manager
 
@@ -61,7 +63,7 @@ connect. Install the bridge once:
 bun run bridge:install
 ```
 
-Then reload Foyer and check **Dataset → Password managers**. To connect another
+Then reload Foyer and check **Open Foyer → Password managers**. To connect another
 password manager, see [docs/PROVIDERS.md](docs/PROVIDERS.md).
 
 ## Where data lives
@@ -83,3 +85,8 @@ bun run typecheck
 
 The data model is in `src/shared/types.ts`. The filters that strip anything
 personal are in `src/shared/privacy.ts`.
+
+## Credits
+
+Interface type is [Geist and Geist Mono](https://vercel.com/font) by Vercel,
+under the SIL Open Font License (`static/fonts/OFL.txt`).

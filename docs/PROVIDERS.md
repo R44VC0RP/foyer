@@ -20,7 +20,7 @@ web page ─ content script ─ background ══ native messaging ══ foyer-
 bun run bridge:install     # builds foyer-bridge and registers it with your browsers
 ```
 
-Then reload Foyer. The dashboard's **Password managers** section shows each
+Then reload Foyer. **Open Foyer → Password managers** shows each
 provider and whether it's ready.
 
 Configuration lives in `~/.config/foyer/bridge.json`. Without one, the bridge
@@ -156,7 +156,7 @@ origin, never from page input.
 ## Or: plug in as a browser extension
 
 A password manager that already ships a browser extension can skip the bridge.
-The user allowlists its extension id in **Dataset → Password managers**, and
+The user allowlists its extension id in **Open Foyer → Password managers**, and
 Foyer sends it the same requests with `chrome.runtime.sendMessage`. Each request
 carries `foyer: 1`; answer with the same response shapes as above:
 

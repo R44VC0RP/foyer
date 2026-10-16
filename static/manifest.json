@@ -2,9 +2,9 @@
   "manifest_version": 3,
   "name": "Foyer",
   "short_name": "Foyer",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAq/a2VmK/N6tDONdWCRa68UfitgLI77stnWm+3LaMyBHvaH6QUQfhbS4nqG/Rn8Ag1urhpRxUrCb4eUKZhz9lOT9qsn99uCwTTFxbKYlqTdvbmKv5JKUzTApdRKD1T/snz2wP0aQjyE6LQewSP7Wt4xyLoEIuYuSNsJIvG+cwDKmLNA9b5cMk411bZkttofCfh7h/jLV4QeN2AFWJFdeMS50V3zUMJh7WkT4ircidjRnA6KNQgmC283as18NWEa8GBbEZid3YkPzvikkPD6OF7OtevI1u+otzY/A0ytiRCjg0NrHDLq1blUHGuRREHyzwAVs9NUr8ylRCck11YLkeJwIDAQAB",
-  "description": "Learns how each site logs you in (password, passkey, Google and friends) without keeping anything personal.",
+  "description": "Connect any password manager. Fill and save logins, passkeys and Sign in with Google, and learn how every site signs you in.",
   "minimum_chrome_version": "120",
   "icons": {
     "16": "icons/icon-16.png",
@@ -48,7 +48,7 @@
     }
   ],
   "action": {
-    "default_title": "Foyer",
+    "default_title": "Foyer: logins for this site",
     "default_icon": {
       "16": "icons/icon-16.png",
       "32": "icons/icon-32.png",
@@ -70,6 +70,9 @@
         "dialog.html",
         "dialog.css",
         "dialog.js",
+        "theme.css",
+        "fonts/Geist-Variable.woff2",
+        "fonts/GeistMono-Variable.woff2",
         "icons/icon-48.png"
       ],
       "matches": [
